@@ -1,5 +1,5 @@
 use rocket::serde::json::Json;
-use rocket::http::Status;
+use rocket::http::{ContentType, Status};
 use rocket::State;
 use std::sync::Arc;
 use chrono::{Utc, Duration};
@@ -118,6 +118,49 @@ pub fn get_stat_history(
             recorded_at: p.recorded_at.clone(),
         }).collect(),
     }))
+}
+
+// ── llms.txt ──
+#[get("/llms.txt")]
+pub fn llms_txt() -> (ContentType, &'static str) {
+    (ContentType::Plain, "\
+# Private Dashboard — HNR Stats API
+> Local network stats dashboard for the Humans-Not-Required ecosystem.
+> Displays key operational metrics with trend data across multiple time windows.
+
+## API Base: /api/v1
+
+## Endpoints
+
+### GET /api/v1/health
+Returns service status, version, and stat counts.
+
+### POST /api/v1/stats
+Submit a batch of stat snapshots. Requires `Authorization: Bearer <manage_key>`.
+Body: Array of `{\"key\": string, \"value\": number, \"metadata?\": object}`.
+Max 100 per batch. Keys must be 1-100 characters.
+
+### GET /api/v1/stats
+Returns all metrics with latest value, trend data (24h/7d/30d/90d), sparkline, and human-readable labels.
+No auth required.
+
+### GET /api/v1/stats/<key>?period=24h|7d|30d|90d
+Returns time-series history for a single metric. Default period: 24h.
+
+## Auth
+- Read endpoints: No auth (local network only)
+- Write endpoints: Bearer token (manage key generated on first run)
+
+## Known Metric Keys
+agents_discovered, moltbook_interesting, moltbook_spam, outreach_sent, outreach_received,
+repos_count, tests_total, deploys_count, commits_total, twitter_headlines, siblings_count
+")
+}
+
+// ── OpenAPI spec ──
+#[get("/openapi.json")]
+pub fn openapi_spec() -> (ContentType, &'static str) {
+    (ContentType::JSON, include_str!("../openapi.json"))
 }
 
 fn compute_trend(db: &Db, key: &str, current: f64, since: chrono::DateTime<Utc>) -> TrendData {

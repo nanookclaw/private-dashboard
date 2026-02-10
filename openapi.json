@@ -1,0 +1,199 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Private Dashboard API",
+    "description": "Local network stats dashboard for the Humans-Not-Required ecosystem. Displays key operational metrics with trend data across multiple time windows.",
+    "version": "0.1.0",
+    "license": { "name": "MIT" }
+  },
+  "servers": [
+    { "url": "/api/v1", "description": "API v1" }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "operationId": "health",
+        "responses": {
+          "200": {
+            "description": "Service status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "version": { "type": "string", "example": "0.1.0" },
+                    "stats_count": { "type": "integer", "example": 42 },
+                    "keys_count": { "type": "integer", "example": 6 }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stats": {
+      "get": {
+        "summary": "Get all metrics with latest values and trends",
+        "operationId": "getStats",
+        "responses": {
+          "200": {
+            "description": "All stats with trends",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stats": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/StatSummary" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Submit a batch of stat snapshots",
+        "operationId": "submitStats",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "array",
+                "items": { "$ref": "#/components/schemas/StatInput" },
+                "maxItems": 100,
+                "minItems": 1
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stats accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": { "type": "integer", "example": 5 }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Empty array or too many stats" },
+          "401": { "description": "Missing Authorization header" },
+          "403": { "description": "Invalid manage key" }
+        }
+      }
+    },
+    "/stats/{key}": {
+      "get": {
+        "summary": "Get time-series history for a single metric",
+        "operationId": "getStatHistory",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Metric key (e.g., agents_discovered)"
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["24h", "7d", "30d", "90d"],
+              "default": "24h"
+            },
+            "description": "Time window for history"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stat history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": { "type": "string" },
+                    "points": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "value": { "type": "number" },
+                          "recorded_at": { "type": "string", "format": "date-time" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": { "description": "Invalid period" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Manage key generated on first run"
+      }
+    },
+    "schemas": {
+      "StatInput": {
+        "type": "object",
+        "required": ["key", "value"],
+        "properties": {
+          "key": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "value": { "type": "number" },
+          "metadata": { "type": "object", "description": "Optional context" }
+        }
+      },
+      "StatSummary": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "current": { "type": "number" },
+          "trends": { "$ref": "#/components/schemas/Trends" },
+          "sparkline_24h": { "type": "array", "items": { "type": "number" } },
+          "last_updated": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Trends": {
+        "type": "object",
+        "properties": {
+          "24h": { "$ref": "#/components/schemas/TrendData" },
+          "7d": { "$ref": "#/components/schemas/TrendData" },
+          "30d": { "$ref": "#/components/schemas/TrendData" },
+          "90d": { "$ref": "#/components/schemas/TrendData" }
+        }
+      },
+      "TrendData": {
+        "type": "object",
+        "properties": {
+          "start": { "type": "number", "nullable": true },
+          "end": { "type": "number" },
+          "change": { "type": "number", "nullable": true },
+          "pct": { "type": "number", "nullable": true }
+        }
+      }
+    }
+  }
+}

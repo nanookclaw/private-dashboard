@@ -20,6 +20,10 @@ fn test_client() -> (Client, String) {
             private_dashboard::routes::submit_stats,
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
+        ])
+        .mount("/", rocket::routes![
+            private_dashboard::routes::llms_txt,
+            private_dashboard::routes::openapi_spec,
         ]);
 
     (Client::tracked(rocket).unwrap(), key)
@@ -217,6 +221,129 @@ fn test_get_stats_empty() {
 }
 
 #[test]
+fn test_submit_too_many_stats() {
+    let (client, key) = test_client();
+    // Build a batch of 101 stats (over the limit of 100)
+    let stats: Vec<serde_json::Value> = (0..101)
+        .map(|i| serde_json::json!({"key": format!("metric_{}", i), "value": i}))
+        .collect();
+    let body = serde_json::to_string(&stats).unwrap();
+
+    let response = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(body)
+        .dispatch();
+    assert_eq!(response.status(), Status::BadRequest);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert!(body["error"].as_str().unwrap().contains("max 100"));
+}
+
+#[test]
+fn test_submit_exactly_100_stats() {
+    let (client, key) = test_client();
+    let stats: Vec<serde_json::Value> = (0..100)
+        .map(|i| serde_json::json!({"key": format!("m_{}", i), "value": i}))
+        .collect();
+    let body = serde_json::to_string(&stats).unwrap();
+
+    let response = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(body)
+        .dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["accepted"], 100);
+}
+
+#[test]
+fn test_submit_skips_long_keys() {
+    let (client, key) = test_client();
+    let long_key = "a".repeat(101); // over 100 char limit
+    let body = format!(
+        r#"[{{"key":"{}","value":1}},{{"key":"valid_key","value":2}}]"#,
+        long_key
+    );
+
+    let response = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(body)
+        .dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["accepted"], 1); // only valid_key accepted
+}
+
+#[test]
+fn test_get_stat_history_default_period() {
+    let (client, key) = test_client();
+
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"default_period_test","value":55}]"#)
+        .dispatch();
+
+    // No period param — should default to 24h
+    let response = client.get("/api/v1/stats/default_period_test").dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["key"], "default_period_test");
+    assert_eq!(body["points"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn test_get_stat_history_nonexistent_key() {
+    let (client, _) = test_client();
+    let response = client.get("/api/v1/stats/nonexistent_key?period=7d").dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["key"], "nonexistent_key");
+    assert_eq!(body["points"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_sparkline_populated() {
+    let (client, key) = test_client();
+
+    // Submit a stat
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"spark_test","value":10}]"#)
+        .dispatch();
+
+    let response = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = response.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "spark_test").unwrap();
+    // Sparkline should be an array (may have 1 element since we only submitted once)
+    assert!(stat["sparkline_24h"].is_array());
+    let sparkline = stat["sparkline_24h"].as_array().unwrap();
+    assert!(!sparkline.is_empty());
+    assert_eq!(sparkline[0], 10.0);
+}
+
+#[test]
+fn test_key_labels() {
+    use private_dashboard::models::key_label;
+    assert_eq!(key_label("agents_discovered"), "Agents Discovered");
+    assert_eq!(key_label("repos_count"), "Repos");
+    assert_eq!(key_label("tests_total"), "Total Tests");
+    assert_eq!(key_label("siblings_count"), "Sibling Agents");
+    // Unknown key gets underscores replaced with spaces
+    assert_eq!(key_label("custom_metric_name"), "custom metric name");
+    assert_eq!(key_label("singleword"), "singleword");
+}
+
+#[test]
 fn test_stat_trends_structure() {
     let (client, key) = test_client();
 
@@ -239,4 +366,29 @@ fn test_stat_trends_structure() {
 
     // Each trend should have end = current
     assert_eq!(stat["trends"]["24h"]["end"], 100.0);
+}
+
+#[test]
+fn test_llms_txt() {
+    let (client, _) = test_client();
+    let response = client.get("/llms.txt").dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body = response.into_string().unwrap();
+    assert!(body.contains("Private Dashboard"));
+    assert!(body.contains("POST /api/v1/stats"));
+    assert!(body.contains("GET /api/v1/stats"));
+    assert!(body.contains("manage_key"));
+}
+
+#[test]
+fn test_openapi_spec() {
+    let (client, _) = test_client();
+    let response = client.get("/openapi.json").dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body: serde_json::Value = response.into_json().unwrap();
+    assert_eq!(body["openapi"], "3.0.3");
+    assert_eq!(body["info"]["title"], "Private Dashboard API");
+    assert!(body["paths"]["/stats"].is_object());
+    assert!(body["paths"]["/health"].is_object());
+    assert!(body["paths"]["/stats/{key}"].is_object());
 }

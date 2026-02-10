@@ -51,6 +51,10 @@ fn rocket() -> _ {
             routes::submit_stats,
             routes::get_stats,
             routes::get_stat_history,
+        ])
+        .mount("/", routes![
+            routes::llms_txt,
+            routes::openapi_spec,
         ]);
 
     if static_dir.exists() {
