@@ -25,7 +25,9 @@
                     "status": { "type": "string", "example": "ok" },
                     "version": { "type": "string", "example": "0.1.0" },
                     "stats_count": { "type": "integer", "example": 42 },
-                    "keys_count": { "type": "integer", "example": 6 }
+                    "keys_count": { "type": "integer", "example": 6 },
+                    "retention_days": { "type": "integer", "example": 90 },
+                    "oldest_stat": { "type": "string", "format": "date-time", "nullable": true }
                   }
                 }
               }
@@ -89,6 +91,33 @@
             }
           },
           "400": { "description": "Empty array or too many stats" },
+          "401": { "description": "Missing Authorization header" },
+          "403": { "description": "Invalid manage key" }
+        }
+      }
+    },
+    "/stats/prune": {
+      "post": {
+        "summary": "Trigger data retention pruning",
+        "description": "Deletes stats older than the retention period (90 days). Also runs automatically on startup.",
+        "operationId": "pruneStats",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": {
+            "description": "Prune results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": { "type": "integer", "description": "Number of stats deleted" },
+                    "retention_days": { "type": "integer", "example": 90 },
+                    "remaining": { "type": "integer", "description": "Total stats remaining after prune" }
+                  }
+                }
+              }
+            }
+          },
           "401": { "description": "Missing Authorization header" },
           "403": { "description": "Invalid manage key" }
         }
