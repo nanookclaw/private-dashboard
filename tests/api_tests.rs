@@ -2,6 +2,34 @@ use rocket::http::{ContentType, Header, Status};
 use rocket::local::blocking::Client;
 use std::sync::Arc;
 
+fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
+    let db = Arc::new(private_dashboard::db::Db::new(":memory:").unwrap());
+    let key = format!("dash_test_{}", uuid::Uuid::new_v4().simple());
+    db.set_manage_key(&key);
+
+    let cors = rocket_cors::CorsOptions::default()
+        .allowed_origins(rocket_cors::AllowedOrigins::all())
+        .to_cors()
+        .unwrap();
+
+    let rocket = rocket::build()
+        .attach(cors)
+        .manage(db.clone())
+        .mount("/api/v1", rocket::routes![
+            private_dashboard::routes::health,
+            private_dashboard::routes::submit_stats,
+            private_dashboard::routes::get_stats,
+            private_dashboard::routes::get_stat_history,
+            private_dashboard::routes::prune_stats,
+        ])
+        .mount("/", rocket::routes![
+            private_dashboard::routes::llms_txt,
+            private_dashboard::routes::openapi_spec,
+        ]);
+
+    (Client::tracked(rocket).unwrap(), key, db)
+}
+
 fn test_client() -> (Client, String) {
     let db = Arc::new(private_dashboard::db::Db::new(":memory:").unwrap());
     let key = format!("dash_test_{}", uuid::Uuid::new_v4().simple());
@@ -20,6 +48,7 @@ fn test_client() -> (Client, String) {
             private_dashboard::routes::submit_stats,
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
+            private_dashboard::routes::prune_stats,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -695,4 +724,152 @@ fn test_key_label_all_known_keys() {
     for (key, expected) in known {
         assert_eq!(key_label(key), expected, "Label mismatch for key '{}'", key);
     }
+}
+
+// ── Prune tests ──
+
+#[test]
+fn test_prune_no_auth() {
+    let (client, _key) = test_client();
+    let resp = client.post("/api/v1/stats/prune").dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_prune_wrong_key() {
+    let (client, _key) = test_client();
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", "Bearer wrong_key"))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Forbidden);
+}
+
+#[test]
+fn test_prune_empty_db() {
+    let (client, key) = test_client();
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], 0);
+    assert_eq!(body["remaining"], 0);
+    assert_eq!(body["retention_days"], 90);
+}
+
+#[test]
+fn test_prune_keeps_recent_data() {
+    let (client, key, _db) = test_client_with_db();
+
+    // Submit some fresh stats via the API
+    let stats = serde_json::json!([
+        {"key": "test_metric", "value": 42.0},
+        {"key": "another_metric", "value": 100.0}
+    ]);
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(stats.to_string())
+        .dispatch();
+
+    // Prune — nothing should be deleted since data is fresh
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], 0);
+    assert_eq!(body["remaining"], 2);
+}
+
+#[test]
+fn test_prune_deletes_old_data() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert stats with an old timestamp (100 days ago) directly via DB
+    let old_time = (chrono::Utc::now() - chrono::Duration::days(100)).to_rfc3339();
+    db.insert_stat("old_metric", 1.0, &old_time, None);
+    db.insert_stat("old_metric", 2.0, &old_time, None);
+    db.insert_stat("old_metric_2", 50.0, &old_time, None);
+
+    // Insert a fresh stat via the API
+    let stats = serde_json::json!([{"key": "fresh_metric", "value": 99.0}]);
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(stats.to_string())
+        .dispatch();
+
+    // Verify we have 4 total
+    assert_eq!(db.get_stat_count(), 4);
+
+    // Prune — should delete 3 old ones, keep 1 fresh
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], 3);
+    assert_eq!(body["remaining"], 1);
+    assert_eq!(body["retention_days"], 90);
+}
+
+#[test]
+fn test_prune_boundary_89_days_kept() {
+    let (_client, _key, db) = test_client_with_db();
+
+    // Insert stat exactly 89 days ago — should NOT be pruned (within 90-day window)
+    let time_89d = (chrono::Utc::now() - chrono::Duration::days(89)).to_rfc3339();
+    db.insert_stat("boundary_metric", 10.0, &time_89d, None);
+
+    let deleted = db.prune_old_stats(90);
+    assert_eq!(deleted, 0);
+    assert_eq!(db.get_stat_count(), 1);
+}
+
+#[test]
+fn test_prune_boundary_91_days_deleted() {
+    let (_client, _key, db) = test_client_with_db();
+
+    // Insert stat 91 days ago — should be pruned
+    let time_91d = (chrono::Utc::now() - chrono::Duration::days(91)).to_rfc3339();
+    db.insert_stat("old_boundary", 10.0, &time_91d, None);
+
+    let deleted = db.prune_old_stats(90);
+    assert_eq!(deleted, 1);
+    assert_eq!(db.get_stat_count(), 0);
+}
+
+#[test]
+fn test_health_includes_retention_info() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert a stat so we have an oldest timestamp
+    let stats = serde_json::json!([{"key": "test", "value": 1.0}]);
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(stats.to_string())
+        .dispatch();
+
+    let resp = client.get("/api/v1/health").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["retention_days"], 90);
+    assert!(body["oldest_stat"].is_string());
+}
+
+#[test]
+fn test_health_oldest_stat_null_when_empty() {
+    let (client, _key) = test_client();
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["oldest_stat"].is_null());
 }

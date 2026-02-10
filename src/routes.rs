@@ -8,6 +8,8 @@ use crate::db::Db;
 use crate::auth::ManageKey;
 use crate::models::*;
 
+pub const DEFAULT_RETENTION_DAYS: i64 = 90;
+
 #[get("/health")]
 pub fn health(db: &State<Arc<Db>>) -> Json<HealthResponse> {
     let keys = db.get_all_keys();
@@ -16,6 +18,8 @@ pub fn health(db: &State<Arc<Db>>) -> Json<HealthResponse> {
         version: env!("CARGO_PKG_VERSION").into(),
         stats_count: db.get_stat_count(),
         keys_count: keys.len(),
+        retention_days: DEFAULT_RETENTION_DAYS,
+        oldest_stat: db.get_oldest_stat_time(),
     })
 }
 
@@ -120,6 +124,29 @@ pub fn get_stat_history(
     }))
 }
 
+#[post("/stats/prune")]
+pub fn prune_stats(
+    db: &State<Arc<Db>>,
+    auth: ManageKey,
+) -> Result<Json<PruneResponse>, (Status, Json<serde_json::Value>)> {
+    let expected = db.get_manage_key().unwrap_or_default();
+    if auth.0 != expected {
+        return Err((
+            Status::Forbidden,
+            Json(serde_json::json!({"error": "Invalid manage key"})),
+        ));
+    }
+
+    let deleted = db.prune_old_stats(DEFAULT_RETENTION_DAYS);
+    let remaining = db.get_stat_count();
+
+    Ok(Json(PruneResponse {
+        deleted,
+        retention_days: DEFAULT_RETENTION_DAYS,
+        remaining,
+    }))
+}
+
 // ── llms.txt ──
 #[get("/llms.txt")]
 pub fn llms_txt() -> (ContentType, &'static str) {
@@ -147,9 +174,17 @@ No auth required.
 ### GET /api/v1/stats/<key>?period=24h|7d|30d|90d
 Returns time-series history for a single metric. Default period: 24h.
 
+### POST /api/v1/stats/prune
+Manually trigger data retention. Deletes stats older than 90 days.
+Requires `Authorization: Bearer <manage_key>`. Returns deleted count and remaining.
+
 ## Auth
 - Read endpoints: No auth (local network only)
 - Write endpoints: Bearer token (manage key generated on first run)
+
+## Data Retention
+- Auto-prune on startup: stats older than 90 days are automatically deleted
+- Manual prune: POST /api/v1/stats/prune (auth required)
 
 ## Known Metric Keys
 agents_discovered, moltbook_interesting, moltbook_spam, outreach_sent, outreach_received,

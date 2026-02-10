@@ -136,6 +136,27 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         conn.query_row("SELECT COUNT(*) FROM stats", [], |row| row.get(0)).unwrap_or(0)
     }
+
+    /// Delete stats older than `days` days. Returns number of rows deleted.
+    pub fn prune_old_stats(&self, days: i64) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        let cutoff = chrono::Utc::now() - chrono::Duration::days(days);
+        let cutoff_str = cutoff.to_rfc3339();
+        conn.execute(
+            "DELETE FROM stats WHERE recorded_at < ?1",
+            rusqlite::params![cutoff_str],
+        ).unwrap_or(0) as i64
+    }
+
+    /// Get the oldest recorded_at timestamp across all stats.
+    pub fn get_oldest_stat_time(&self) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT MIN(recorded_at) FROM stats",
+            [],
+            |row| row.get(0),
+        ).ok()
+    }
 }
 
 pub struct LatestStat {

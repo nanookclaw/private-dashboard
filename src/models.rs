@@ -66,6 +66,15 @@ pub struct HealthResponse {
     pub version: String,
     pub stats_count: i64,
     pub keys_count: usize,
+    pub retention_days: i64,
+    pub oldest_stat: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PruneResponse {
+    pub deleted: i64,
+    pub retention_days: i64,
+    pub remaining: i64,
 }
 
 /// Human-readable labels for stat keys

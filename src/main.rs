@@ -34,6 +34,12 @@ fn rocket() -> _ {
 
     let _ = manage_key; // Used for display only; auth checks DB directly
 
+    // Auto-prune old data on startup
+    let pruned = database.prune_old_stats(routes::DEFAULT_RETENTION_DAYS);
+    if pruned > 0 {
+        println!("🧹 Pruned {} stats older than {} days", pruned, routes::DEFAULT_RETENTION_DAYS);
+    }
+
     let cors = CorsOptions::default()
         .allowed_origins(AllowedOrigins::all())
         .to_cors()
@@ -51,6 +57,7 @@ fn rocket() -> _ {
             routes::submit_stats,
             routes::get_stats,
             routes::get_stat_history,
+            routes::prune_stats,
         ])
         .mount("/", routes![
             routes::llms_txt,
