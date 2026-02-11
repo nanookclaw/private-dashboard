@@ -41,7 +41,8 @@ export default function App() {
       {/* Header — compact */}
       <header className="flex items-center justify-between mb-3 flex-shrink-0">
         <div className="flex items-center gap-3">
-          <h1 className="text-lg font-semibold tracking-tight">📊 HNR Dashboard</h1>
+          <img src="/logo.svg" alt="HNR Dashboard" className="h-7 w-7" />
+          <h1 className="text-lg font-semibold tracking-tight">HNR Dashboard</h1>
           <span className="text-xs text-slate-600">Humans Not Required</span>
         </div>
         <div className="flex items-center gap-4 text-xs text-slate-500">
