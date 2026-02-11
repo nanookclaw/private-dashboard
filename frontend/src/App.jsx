@@ -31,32 +31,35 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // Calculate grid layout based on number of cards
+  const count = stats.length;
+  const cols = count <= 4 ? 2 : count <= 6 ? 3 : count <= 9 ? 3 : 4;
+  const rows = Math.ceil(count / cols);
+
   return (
-    <div className="min-h-screen bg-slate-950 text-white p-6">
-      {/* Header */}
-      <header className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-2xl font-bold">📊 HNR Dashboard</h1>
-          <p className="text-sm text-slate-500 mt-1">
-            Humans Not Required — Operational Metrics
-          </p>
+    <div className="h-screen overflow-hidden bg-slate-950 text-white flex flex-col p-4">
+      {/* Header — compact */}
+      <header className="flex items-center justify-between mb-3 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <h1 className="text-lg font-semibold tracking-tight">📊 HNR Dashboard</h1>
+          <span className="text-xs text-slate-600">Humans Not Required</span>
         </div>
-        <div className="text-right text-xs text-slate-500">
+        <div className="flex items-center gap-4 text-xs text-slate-500">
           {health && (
-            <div>{health.keys_count} metrics · {health.stats_count} data points</div>
+            <span>{health.keys_count} metrics · {health.stats_count} points</span>
           )}
           {lastRefresh && (
-            <div>Updated {lastRefresh.toLocaleTimeString()}</div>
+            <span>Updated {lastRefresh.toLocaleTimeString()}</span>
           )}
           {error && (
-            <div className="text-red-400 mt-1">⚠ {error}</div>
+            <span className="text-red-400">⚠ {error}</span>
           )}
         </div>
       </header>
 
-      {/* Stats Grid */}
+      {/* Stats Grid — fills remaining viewport */}
       {stats.length === 0 ? (
-        <div className="flex items-center justify-center h-[60vh]">
+        <div className="flex-1 flex items-center justify-center">
           <div className="text-center">
             <div className="text-6xl mb-4">📡</div>
             <h2 className="text-xl text-slate-400 mb-2">No Data Yet</h2>
@@ -67,7 +70,13 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+        <div
+          className="flex-1 grid gap-3 min-h-0"
+          style={{
+            gridTemplateColumns: `repeat(${cols}, 1fr)`,
+            gridTemplateRows: `repeat(${rows}, 1fr)`,
+          }}
+        >
           {stats.map(stat => (
             <StatCard key={stat.key} stat={stat} />
           ))}

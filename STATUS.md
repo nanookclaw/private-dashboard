@@ -4,7 +4,7 @@
 
 **Phase:** Deployed to staging, collector live, data retention active  
 **Tests:** 47 passing  
-**Last Updated:** 2026-02-10 19:55 UTC
+**Last Updated:** 2026-02-11 03:40 UTC
 
 ## What's Done
 
@@ -33,12 +33,14 @@
 - ✅ Metric labels for all collector keys (siblings_active, moltbook_health, moltbook_my_posts, twitter_accounts)
 - ✅ Edge case tests: negative/zero/large/fractional values, special chars, invalid JSON, missing fields, large metadata, all periods, rapid writes, 50-key batch
 - ✅ Data retention: 90-day auto-prune on startup + manual prune endpoint + 9 prune tests
+- ✅ UI/UX overhaul: viewport-filling layout, responsive sparklines, improved labels, better trend display
 
 ## What's Next
 
-1. **GitHub Actions CI** — test + build + push to ghcr.io (needs workflow scope — blocked)
-2. **Staging domain** — Add dashboard.hnrstage.xyz to Cloudflare wildcard (Jordan action)
-3. **Frontend polish** — Better formatting for metric labels, add unit suffixes
+1. **Add to /mylinks page** — Jordan wants the private dashboard linked on hnrstage.xyz/mylinks (Jordan direction 2026-02-10)
+2. **GitHub Actions CI** — test + build + push to ghcr.io (needs workflow scope — blocked)
+3. **Staging domain** — Add dashboard.hnrstage.xyz to Cloudflare wildcard (Jordan action)
+4. **Unit suffixes** — Add contextual units to metrics (e.g., "656 agents", "444 commits")
 
 ## ⚠️ Gotchas
 

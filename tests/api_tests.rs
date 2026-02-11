@@ -364,7 +364,7 @@ fn test_sparkline_populated() {
 fn test_key_labels() {
     use private_dashboard::models::key_label;
     assert_eq!(key_label("agents_discovered"), "Agents Discovered");
-    assert_eq!(key_label("repos_count"), "Repos");
+    assert_eq!(key_label("repos_count"), "Repositories");
     assert_eq!(key_label("tests_total"), "Total Tests");
     assert_eq!(key_label("siblings_count"), "Sibling Agents");
     // Unknown key gets underscores replaced with spaces
@@ -705,20 +705,20 @@ fn test_key_label_all_known_keys() {
     // All known keys should have proper labels (not just underscore replacement)
     let known = vec![
         ("agents_discovered", "Agents Discovered"),
-        ("moltbook_interesting", "Moltbook Interesting"),
-        ("moltbook_spam", "Moltbook Spam"),
+        ("moltbook_interesting", "Interesting Posts"),
+        ("moltbook_spam", "Spam Detected"),
         ("outreach_sent", "Outreach Sent"),
-        ("outreach_received", "Outreach Received"),
-        ("repos_count", "Repos"),
+        ("outreach_received", "Inbound Messages"),
+        ("repos_count", "Repositories"),
         ("tests_total", "Total Tests"),
-        ("deploys_count", "Deploys"),
+        ("deploys_count", "Deployments"),
         ("commits_total", "Total Commits"),
-        ("twitter_headlines", "Twitter Headlines"),
+        ("twitter_headlines", "Flagged Tweets"),
         ("siblings_count", "Sibling Agents"),
-        ("siblings_active", "Siblings Active"),
-        ("moltbook_health", "Moltbook Health"),
-        ("moltbook_my_posts", "Moltbook Posts"),
-        ("twitter_accounts", "Twitter Accounts"),
+        ("siblings_active", "Active Siblings"),
+        ("moltbook_health", "Platform Health"),
+        ("moltbook_my_posts", "My Posts"),
+        ("twitter_accounts", "Tracked Accounts"),
     ];
 
     for (key, expected) in known {
