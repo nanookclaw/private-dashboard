@@ -4,6 +4,26 @@ import { fetchStatHistory } from '../api';
 
 const PERIODS = ['24h', '7d', '30d', '90d'];
 
+// Contextual unit suffixes for metrics
+const UNIT_MAP = {
+  agents_discovered: 'agents',
+  moltbook_interesting: 'items',
+  moltbook_health: '', // binary — handled specially
+  moltbook_my_posts: 'posts',
+  twitter_headlines: 'tweets',
+  twitter_accounts: 'accounts',
+  outreach_sent: 'sent',
+  outreach_received: 'received',
+  repos_count: 'repos',
+  commits_total: 'commits',
+  tests_total: 'tests',
+  siblings_active: 'online',
+};
+
+function getUnit(key) {
+  return UNIT_MAP[key] || '';
+}
+
 function formatNumber(n) {
   if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
   if (n >= 10_000) return (n / 1_000).toFixed(0) + 'K';
@@ -137,11 +157,16 @@ export default function StatCard({ stat }) {
         </div>
       </div>
 
-      {/* Big number + trend */}
+      {/* Big number + unit + trend */}
       <div className="flex items-baseline gap-2 sm:gap-3 flex-shrink-0">
         <span className="text-2xl sm:text-3xl font-bold text-white tabular-nums leading-tight">
           {formatNumber(stat.current)}
         </span>
+        {getUnit(stat.key) && (
+          <span className="text-xs sm:text-sm text-slate-500 font-medium -ml-1">
+            {getUnit(stat.key)}
+          </span>
+        )}
         <TrendBadge trend={trend} period={period} />
       </div>
 
