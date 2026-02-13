@@ -4,7 +4,7 @@
 
 **Phase:** Deployed to staging, collector live, data retention active  
 **Tests:** 47 passing  
-**Last Updated:** 2026-02-11 08:35 UTC
+**Last Updated:** 2026-02-13 03:08 UTC
 
 ## What's Done
 
@@ -41,6 +41,9 @@
 - ✅ Relative time labels: "5m ago" instead of raw timestamps
 - ✅ Backend trend fix: falls back to earliest point in window (fixes null trends for new data)
 - ✅ Better null trend display: "no data yet" instead of "collecting…"
+- ✅ Responsive mobile layout: 1-col mobile, 2-col tablet, viewport-filling desktop
+- ✅ Touch-friendly period buttons on mobile
+- ✅ Stacked header on small screens, responsive font sizes
 
 ## What's Next
 
