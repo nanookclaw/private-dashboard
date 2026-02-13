@@ -3,6 +3,8 @@ services:
     image: ghcr.io/humans-not-required/private-dashboard:dev
     container_name: private-dashboard
     restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
     ports:
       - "3008:8000"
     volumes:

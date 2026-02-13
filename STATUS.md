@@ -60,7 +60,7 @@
 - Current manage key on staging: `dash_0e54dee0985e417b8ecb78b3607ad816`
 - Frontend requires `bun` for Docker build (same pattern as other HNR projects)
 - openapi.json must be COPY'd in Dockerfile backend stage (include_str! needs it at compile time)
-- Currently using local Docker build on staging (no CI/ghcr.io yet)
+- Staging runs ghcr.io image + Watchtower label enabled (auto-pulls :dev every 5 min)
 - Collector cron ID: 31f1ab2e-c191-4872-a9ce-f746e5d74928
 - moltbook_health reads 0 when platformHealth.status != "healthy" (check moltbook-state.json)
 - Data retention: 90 days default, runs on startup, manual trigger via POST /api/v1/stats/prune
