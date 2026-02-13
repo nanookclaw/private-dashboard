@@ -4,7 +4,7 @@
 
 **Phase:** Deployed to staging, collector live, data retention active  
 **Tests:** 47 passing  
-**Last Updated:** 2026-02-13 23:25 UTC
+**Last Updated:** 2026-02-13 23:40 UTC
 
 ## What's Done
 
@@ -47,12 +47,14 @@
 - ✅ Stacked header on small screens, responsive font sizes
 - ✅ Unit suffixes — contextual units next to metric values (agents, commits, tests, repos, etc.) (aafae8a)
 - ✅ Already on /mylinks page (hnrstage.xyz/mylinks) — first card with all links
+- ✅ Metric grouping — Development, Network, Moltbook, Social sections with labeled dividers (7403127)
+- ✅ Binary metric display — moltbook_health shows "Healthy"/"Down" with color instead of 1/0 (7403127)
 
 ## What's Next
 
 1. **Staging domain** — Add dashboard.<staging-domain> to Cloudflare wildcard (Jordan action)
-2. **Metric grouping** — Group related metrics visually (e.g., Moltbook metrics together, repo metrics together)
-3. **Custom display for binary metrics** — Show moltbook_health as "Healthy"/"Down" instead of 1/0
+2. **Trend alerts** — Visual indicator when a metric changes significantly (e.g., pulsing dot or highlight)
+3. **Metric detail view** — Click a card to expand full history chart
 
 ## ⚠️ Gotchas
 
