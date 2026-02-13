@@ -110,22 +110,22 @@ export default function StatCard({ stat }) {
   }
 
   return (
-    <div className="bg-slate-900/80 border border-slate-800/60 rounded-xl px-4 pt-3 pb-2 flex flex-col min-h-0 hover:border-slate-700/60 transition-colors">
+    <div className="bg-slate-900/80 border border-slate-800/60 rounded-xl px-3 sm:px-4 pt-3 pb-2 flex flex-col min-h-[140px] lg:min-h-0 hover:border-slate-700/60 transition-colors">
       {/* Header row */}
       <div className="flex items-center justify-between flex-shrink-0 mb-1">
-        <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${dotColor}`} />
-          <h3 className="text-xs font-medium text-slate-400 uppercase tracking-wider truncate">
+        <div className="flex items-center gap-2 min-w-0">
+          <div className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
+          <h3 className="text-[11px] sm:text-xs font-medium text-slate-400 uppercase tracking-wider truncate">
             {stat.label}
           </h3>
         </div>
-        {/* Period selector */}
-        <div className="flex gap-0.5 flex-shrink-0">
+        {/* Period selector — touch-friendly on mobile */}
+        <div className="flex gap-0.5 sm:gap-0.5 flex-shrink-0">
           {PERIODS.map(p => (
             <button
               key={p}
               onClick={() => setPeriod(p)}
-              className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${
+              className={`period-btn text-[10px] sm:text-[10px] px-1.5 sm:px-1.5 py-1 sm:py-0.5 rounded transition-colors ${
                 p === period
                   ? 'bg-slate-700 text-white'
                   : 'text-slate-600 hover:text-slate-400'
@@ -138,15 +138,15 @@ export default function StatCard({ stat }) {
       </div>
 
       {/* Big number + trend */}
-      <div className="flex items-baseline gap-3 flex-shrink-0">
-        <span className="text-3xl font-bold text-white tabular-nums leading-tight">
+      <div className="flex items-baseline gap-2 sm:gap-3 flex-shrink-0">
+        <span className="text-2xl sm:text-3xl font-bold text-white tabular-nums leading-tight">
           {formatNumber(stat.current)}
         </span>
         <TrendBadge trend={trend} period={period} />
       </div>
 
       {/* Sparkline — fills remaining space, edge-to-edge */}
-      <div className="flex-1 mt-1 -mx-4 min-h-0 relative">
+      <div className="flex-1 mt-1 -mx-3 sm:-mx-4 min-h-[40px] lg:min-h-0 relative">
         {loading && (
           <div className="absolute inset-0 flex items-center justify-center z-10">
             <span className="text-[10px] text-slate-600">loading…</span>
