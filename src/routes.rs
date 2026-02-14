@@ -259,7 +259,7 @@ pub fn get_alerts(
     key: Option<&str>,
     limit: Option<i64>,
 ) -> Json<AlertsResponse> {
-    let lim = limit.unwrap_or(50).min(500).max(1);
+    let lim = limit.unwrap_or(50).clamp(1, 500);
     let alerts = match key {
         Some(k) => db.get_alerts_for_key(k, lim),
         None => db.get_alerts(lim),

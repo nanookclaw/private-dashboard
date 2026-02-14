@@ -852,7 +852,7 @@ fn test_prune_boundary_91_days_deleted() {
 
 #[test]
 fn test_health_includes_retention_info() {
-    let (client, key, db) = test_client_with_db();
+    let (client, key, _db) = test_client_with_db();
 
     // Insert a stat so we have an oldest timestamp
     let stats = serde_json::json!([{"key": "test", "value": 1.0}]);
