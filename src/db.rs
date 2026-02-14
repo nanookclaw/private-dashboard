@@ -24,7 +24,17 @@ impl Db {
             CREATE TABLE IF NOT EXISTS config (
                 key TEXT PRIMARY KEY,
                 value TEXT NOT NULL
-            );"
+            );
+            CREATE TABLE IF NOT EXISTS alert_log (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                key TEXT NOT NULL,
+                level TEXT NOT NULL,
+                value REAL NOT NULL,
+                change_pct REAL NOT NULL,
+                triggered_at TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_alerts_key_time ON alert_log(key, triggered_at);
+            CREATE INDEX IF NOT EXISTS idx_alerts_time ON alert_log(triggered_at);"
         )?;
 
         Ok(Db { conn: Mutex::new(conn) })
@@ -181,6 +191,67 @@ impl Db {
         ).unwrap_or(0) as i64
     }
 
+    /// Insert an alert log entry.
+    pub fn insert_alert(&self, key: &str, level: &str, value: f64, change_pct: f64, triggered_at: &str) {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO alert_log (key, level, value, change_pct, triggered_at) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![key, level, value, change_pct, triggered_at],
+        ).unwrap();
+    }
+
+    /// Get the most recent alert for a key (to debounce).
+    pub fn get_last_alert_time(&self, key: &str) -> Option<String> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT triggered_at FROM alert_log WHERE key = ?1 ORDER BY triggered_at DESC LIMIT 1",
+            params![key],
+            |row| row.get(0),
+        ).ok()
+    }
+
+    /// Get recent alerts, newest first.
+    pub fn get_alerts(&self, limit: i64) -> Vec<AlertEntry> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT key, level, value, change_pct, triggered_at FROM alert_log ORDER BY triggered_at DESC LIMIT ?1"
+        ).unwrap();
+
+        stmt.query_map(params![limit], |row| {
+            Ok(AlertEntry {
+                key: row.get(0)?,
+                level: row.get(1)?,
+                value: row.get(2)?,
+                change_pct: row.get(3)?,
+                triggered_at: row.get(4)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    /// Get alerts for a specific key.
+    pub fn get_alerts_for_key(&self, key: &str, limit: i64) -> Vec<AlertEntry> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT key, level, value, change_pct, triggered_at FROM alert_log WHERE key = ?1 ORDER BY triggered_at DESC LIMIT ?2"
+        ).unwrap();
+
+        stmt.query_map(params![key, limit], |row| {
+            Ok(AlertEntry {
+                key: row.get(0)?,
+                level: row.get(1)?,
+                value: row.get(2)?,
+                change_pct: row.get(3)?,
+                triggered_at: row.get(4)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
+    /// Count total alerts.
+    pub fn get_alert_count(&self) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row("SELECT COUNT(*) FROM alert_log", [], |row| row.get(0)).unwrap_or(0)
+    }
+
     /// Get the oldest recorded_at timestamp across all stats.
     pub fn get_oldest_stat_time(&self) -> Option<String> {
         let conn = self.conn.lock().unwrap();
@@ -203,4 +274,12 @@ pub struct LatestStat {
 pub struct StatPoint {
     pub value: f64,
     pub recorded_at: String,
+}
+
+pub struct AlertEntry {
+    pub key: String,
+    pub level: String,
+    pub value: f64,
+    pub change_pct: f64,
+    pub triggered_at: String,
 }

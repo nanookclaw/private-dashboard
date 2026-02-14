@@ -8,6 +8,12 @@ use crate::db::Db;
 use crate::auth::ManageKey;
 use crate::models::*;
 
+/// Alert thresholds (match frontend logic)
+const ALERT_THRESHOLD_PCT: f64 = 10.0;
+const HOT_THRESHOLD_PCT: f64 = 25.0;
+/// Minimum hours between alerts for the same key (debounce)
+const ALERT_DEBOUNCE_HOURS: i64 = 6;
+
 pub const DEFAULT_RETENTION_DAYS: i64 = 90;
 
 #[get("/health")]
@@ -52,16 +58,45 @@ pub fn submit_stats(
         ));
     }
 
-    let now = Utc::now().to_rfc3339();
+    let now = Utc::now();
+    let now_str = now.to_rfc3339();
     let mut accepted = 0;
+    let mut keys_submitted = Vec::new();
 
     for stat in stats.iter() {
         if stat.key.is_empty() || stat.key.len() > 100 {
             continue;
         }
         let meta = stat.metadata.as_ref().map(|m| m.to_string());
-        db.insert_stat(&stat.key, stat.value, &now, meta.as_deref());
+        db.insert_stat(&stat.key, stat.value, &now_str, meta.as_deref());
+        keys_submitted.push((stat.key.clone(), stat.value));
         accepted += 1;
+    }
+
+    // Check for alert conditions on submitted keys
+    let debounce_cutoff = (now - Duration::hours(ALERT_DEBOUNCE_HOURS)).to_rfc3339();
+    for (key, current_value) in &keys_submitted {
+        // Compute 24h trend
+        let since_24h = (now - Duration::hours(24)).to_rfc3339();
+        if let Some(start_val) = db.get_stat_at_time(key, &since_24h) {
+            if start_val != 0.0 {
+                let pct = ((current_value - start_val) / start_val) * 100.0;
+                let abs_pct = pct.abs();
+
+                if abs_pct >= ALERT_THRESHOLD_PCT {
+                    // Check debounce: skip if recent alert exists for this key
+                    let should_record = match db.get_last_alert_time(key) {
+                        Some(last) => last < debounce_cutoff,
+                        None => true,
+                    };
+
+                    if should_record {
+                        let level = if abs_pct >= HOT_THRESHOLD_PCT { "hot" } else { "alert" };
+                        db.insert_alert(key, level, *current_value, pct, &now_str);
+                    }
+                }
+            }
+        }
     }
 
     Ok(Json(StatSubmitResponse { accepted }))
@@ -218,6 +253,32 @@ pub fn delete_stat(
     }))
 }
 
+#[get("/alerts?<key>&<limit>")]
+pub fn get_alerts(
+    db: &State<Arc<Db>>,
+    key: Option<&str>,
+    limit: Option<i64>,
+) -> Json<AlertsResponse> {
+    let lim = limit.unwrap_or(50).min(500).max(1);
+    let alerts = match key {
+        Some(k) => db.get_alerts_for_key(k, lim),
+        None => db.get_alerts(lim),
+    };
+    let total = db.get_alert_count();
+
+    Json(AlertsResponse {
+        alerts: alerts.iter().map(|a| AlertOut {
+            key: a.key.clone(),
+            label: key_label(&a.key),
+            level: a.level.clone(),
+            value: a.value,
+            change_pct: (a.change_pct * 10.0).round() / 10.0,
+            triggered_at: a.triggered_at.clone(),
+        }).collect(),
+        total,
+    })
+}
+
 // ── llms.txt ──
 #[get("/llms.txt")]
 pub fn llms_txt() -> (ContentType, &'static str) {
@@ -254,6 +315,13 @@ Requires `Authorization: Bearer <manage_key>`. Returns deleted count and remaini
 ### DELETE /api/v1/stats/<key>
 Delete all data points for a specific metric key. Requires `Authorization: Bearer <manage_key>`.
 Returns 404 if the key has no data. Response: `{\"key\": string, \"deleted\": number}`.
+
+### GET /api/v1/alerts?key=<optional>&limit=<optional>
+Returns alert history log — significant metric changes (>=10% = alert, >=25% = hot).
+Auto-recorded on stat submission. Debounced to max 1 alert per key per 6 hours.
+Optional filters: `key` for specific metric, `limit` (1-500, default 50).
+Response: `{\"alerts\": [{\"key\", \"label\", \"level\", \"value\", \"change_pct\", \"triggered_at\"}], \"total\": number}`.
+No auth required.
 
 ## Auth
 - Read endpoints: No auth (local network only)

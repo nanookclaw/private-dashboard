@@ -83,6 +83,22 @@ pub struct DeleteResponse {
     pub deleted: i64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct AlertOut {
+    pub key: String,
+    pub label: String,
+    pub level: String,
+    pub value: f64,
+    pub change_pct: f64,
+    pub triggered_at: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct AlertsResponse {
+    pub alerts: Vec<AlertOut>,
+    pub total: i64,
+}
+
 /// Human-readable labels for stat keys
 pub fn key_label(key: &str) -> String {
     match key {

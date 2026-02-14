@@ -22,6 +22,7 @@ fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
             private_dashboard::routes::get_stat_history,
             private_dashboard::routes::prune_stats,
             private_dashboard::routes::delete_stat,
+            private_dashboard::routes::get_alerts,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -51,6 +52,7 @@ fn test_client() -> (Client, String) {
             private_dashboard::routes::get_stat_history,
             private_dashboard::routes::prune_stats,
             private_dashboard::routes::delete_stat,
+            private_dashboard::routes::get_alerts,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -1081,4 +1083,191 @@ fn test_delete_stat_health_reflects_change() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert_eq!(body["keys_count"], 1);
     assert_eq!(body["stats_count"], 1);
+}
+
+// ── Alert History Tests ──
+
+#[test]
+fn test_alerts_empty() {
+    let (client, _key, _db) = test_client_with_db();
+    let resp = client.get("/api/v1/alerts").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 0);
+    assert_eq!(body["total"], 0);
+}
+
+#[test]
+fn test_alerts_triggered_on_significant_change() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago (outside 24h window)
+    let baseline_time = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("test_metric", 100.0, &baseline_time, None);
+
+    // Submit a 30% increase (should trigger "hot" alert)
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "test_metric", "value": 130.0}]"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // Check alerts
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0]["key"], "test_metric");
+    assert_eq!(alerts[0]["level"], "hot");
+    assert_eq!(alerts[0]["value"], 130.0);
+    assert!(alerts[0]["change_pct"].as_f64().unwrap() > 29.0); // ~30%
+    assert!(alerts[0]["label"].as_str().is_some());
+}
+
+#[test]
+fn test_alerts_alert_level_threshold() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago
+    let baseline_time = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("metric_a", 100.0, &baseline_time, None);
+
+    // Submit a 15% increase (should trigger "alert" not "hot")
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "metric_a", "value": 115.0}]"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0]["level"], "alert");
+}
+
+#[test]
+fn test_alerts_no_alert_for_small_change() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago
+    let baseline_time = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("stable_metric", 100.0, &baseline_time, None);
+
+    // Submit a 5% increase (should NOT trigger alert)
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "stable_metric", "value": 105.0}]"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_alerts_negative_change() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago
+    let baseline_time = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("drop_metric", 100.0, &baseline_time, None);
+
+    // Submit a -20% decrease (should trigger "alert")
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "drop_metric", "value": 80.0}]"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0]["level"], "alert");
+    assert!(alerts[0]["change_pct"].as_f64().unwrap() < -19.0); // ~-20%
+}
+
+#[test]
+fn test_alerts_filter_by_key() {
+    let (client, _key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_alert("metric_a", "alert", 150.0, 15.0, &now);
+    db.insert_alert("metric_b", "hot", 200.0, 30.0, &now);
+
+    // Filter by key
+    let resp = client.get("/api/v1/alerts?key=metric_a").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 1);
+    assert_eq!(alerts[0]["key"], "metric_a");
+}
+
+#[test]
+fn test_alerts_limit() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert 5 alerts
+    for i in 0..5 {
+        let t = (chrono::Utc::now() - chrono::Duration::minutes(i * 10)).to_rfc3339();
+        db.insert_alert(&format!("m{}", i), "alert", 100.0 + i as f64, 15.0, &t);
+    }
+
+    // Limit to 2
+    let resp = client.get("/api/v1/alerts?limit=2").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 2);
+    assert_eq!(body["total"], 5); // total still shows all
+}
+
+#[test]
+fn test_alerts_debounce() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago
+    let baseline_time = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("bounce_metric", 100.0, &baseline_time, None);
+
+    // First submit: triggers alert
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "bounce_metric", "value": 130.0}]"#)
+        .dispatch();
+
+    // Second submit: should be debounced (within 6h)
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key": "bounce_metric", "value": 135.0}]"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    // Only 1 alert despite 2 significant submissions
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 1);
+}
+
+#[test]
+fn test_alerts_ordered_newest_first() {
+    let (client, _key, db) = test_client_with_db();
+
+    db.insert_alert("old", "alert", 100.0, 15.0, "2026-02-01T00:00:00Z");
+    db.insert_alert("new", "hot", 200.0, 30.0, "2026-02-14T00:00:00Z");
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts[0]["key"], "new");
+    assert_eq!(alerts[1]["key"], "old");
 }

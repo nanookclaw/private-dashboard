@@ -123,6 +123,48 @@
         }
       }
     },
+    "/alerts": {
+      "get": {
+        "summary": "Get alert history log",
+        "description": "Returns logged alert events — significant metric changes (>=10% = alert, >=25% = hot). Auto-recorded on stat submission, debounced to max 1 alert per key per 6 hours.",
+        "operationId": "getAlerts",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Filter alerts by metric key"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 },
+            "description": "Maximum alerts to return"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Alert history",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "alerts": {
+                      "type": "array",
+                      "items": { "$ref": "#/components/schemas/AlertOut" }
+                    },
+                    "total": { "type": "integer", "description": "Total alert count (unfiltered)" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stats/{key}": {
       "delete": {
         "summary": "Delete all data for a metric key",
@@ -246,6 +288,17 @@
           "7d": { "$ref": "#/components/schemas/TrendData" },
           "30d": { "$ref": "#/components/schemas/TrendData" },
           "90d": { "$ref": "#/components/schemas/TrendData" }
+        }
+      },
+      "AlertOut": {
+        "type": "object",
+        "properties": {
+          "key": { "type": "string" },
+          "label": { "type": "string" },
+          "level": { "type": "string", "enum": ["alert", "hot"] },
+          "value": { "type": "number" },
+          "change_pct": { "type": "number" },
+          "triggered_at": { "type": "string", "format": "date-time" }
         }
       },
       "TrendData": {
