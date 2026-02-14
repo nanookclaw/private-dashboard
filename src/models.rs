@@ -77,6 +77,12 @@ pub struct PruneResponse {
     pub remaining: i64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct DeleteResponse {
+    pub key: String,
+    pub deleted: i64,
+}
+
 /// Human-readable labels for stat keys
 pub fn key_label(key: &str) -> String {
     match key {

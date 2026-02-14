@@ -172,6 +172,15 @@ impl Db {
         ).unwrap_or(0) as i64
     }
 
+    /// Delete all stats for a given key. Returns number of rows deleted.
+    pub fn delete_stats_by_key(&self, key: &str) -> i64 {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "DELETE FROM stats WHERE key = ?1",
+            rusqlite::params![key],
+        ).unwrap_or(0) as i64
+    }
+
     /// Get the oldest recorded_at timestamp across all stats.
     pub fn get_oldest_stat_time(&self) -> Option<String> {
         let conn = self.conn.lock().unwrap();

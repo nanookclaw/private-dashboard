@@ -21,6 +21,7 @@ fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
             private_dashboard::routes::prune_stats,
+            private_dashboard::routes::delete_stat,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -49,6 +50,7 @@ fn test_client() -> (Client, String) {
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
             private_dashboard::routes::prune_stats,
+            private_dashboard::routes::delete_stat,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -964,4 +966,119 @@ fn test_stat_history_period_still_works() {
     let points = body["points"].as_array().unwrap();
     assert_eq!(points.len(), 1);
     assert_eq!(points[0]["value"], 42.0);
+}
+
+// ── DELETE /api/v1/stats/:key tests ──
+
+#[test]
+fn test_delete_stat_no_auth() {
+    let (client, _key, _db) = test_client_with_db();
+    let resp = client.delete("/api/v1/stats/some_key").dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_delete_stat_wrong_key() {
+    let (client, _key, _db) = test_client_with_db();
+    let resp = client
+        .delete("/api/v1/stats/some_key")
+        .header(Header::new("Authorization", "Bearer wrong_key"))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Forbidden);
+}
+
+#[test]
+fn test_delete_stat_nonexistent_key() {
+    let (client, key, _db) = test_client_with_db();
+    let resp = client
+        .delete("/api/v1/stats/no_such_metric")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["key"], "no_such_metric");
+}
+
+#[test]
+fn test_delete_stat_success() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert some data
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("stale_metric", 100.0, &now, None);
+    db.insert_stat("stale_metric", 200.0, &now, None);
+    db.insert_stat("keep_metric", 50.0, &now, None);
+
+    // Delete stale_metric
+    let resp = client
+        .delete("/api/v1/stats/stale_metric")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["key"], "stale_metric");
+    assert_eq!(body["deleted"], 2);
+
+    // Verify stale_metric is gone from stats listing
+    let stats_resp = client.get("/api/v1/stats").dispatch();
+    let stats_body: serde_json::Value = stats_resp.into_json().unwrap();
+    let keys: Vec<&str> = stats_body["stats"].as_array().unwrap()
+        .iter().map(|s| s["key"].as_str().unwrap()).collect();
+    assert!(!keys.contains(&"stale_metric"));
+    assert!(keys.contains(&"keep_metric"));
+}
+
+#[test]
+fn test_delete_stat_removes_all_history() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert multiple data points across time
+    db.insert_stat("to_delete", 10.0, "2026-01-01T00:00:00Z", None);
+    db.insert_stat("to_delete", 20.0, "2026-01-15T00:00:00Z", None);
+    db.insert_stat("to_delete", 30.0, "2026-02-01T00:00:00Z", None);
+
+    // Verify we have history
+    let resp = client.get("/api/v1/stats/to_delete?period=90d").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["points"].as_array().unwrap().len(), 3);
+
+    // Delete
+    let resp = client
+        .delete("/api/v1/stats/to_delete")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    assert_eq!(resp.into_json::<serde_json::Value>().unwrap()["deleted"], 3);
+
+    // Verify history is empty
+    let resp = client.get("/api/v1/stats/to_delete?period=90d").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["points"].as_array().unwrap().len(), 0);
+}
+
+#[test]
+fn test_delete_stat_health_reflects_change() {
+    let (client, key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("metric_a", 1.0, &now, None);
+    db.insert_stat("metric_b", 2.0, &now, None);
+
+    // Health before delete
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["keys_count"], 2);
+    assert_eq!(body["stats_count"], 2);
+
+    // Delete metric_a
+    client
+        .delete("/api/v1/stats/metric_a")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+
+    // Health after delete
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["keys_count"], 1);
+    assert_eq!(body["stats_count"], 1);
 }

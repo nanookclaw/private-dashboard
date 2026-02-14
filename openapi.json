@@ -124,6 +124,40 @@
       }
     },
     "/stats/{key}": {
+      "delete": {
+        "summary": "Delete all data for a metric key",
+        "description": "Permanently removes all historical data points for the specified metric key.",
+        "operationId": "deleteStat",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Metric key to delete (e.g., moltbook_spam)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Metric deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "key": { "type": "string" },
+                    "deleted": { "type": "integer", "description": "Number of data points removed" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Missing Authorization header" },
+          "403": { "description": "Invalid manage key" },
+          "404": { "description": "No stats found for key" }
+        }
+      },
       "get": {
         "summary": "Get time-series history for a single metric",
         "operationId": "getStatHistory",

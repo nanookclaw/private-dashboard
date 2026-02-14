@@ -58,6 +58,7 @@ fn rocket() -> _ {
             routes::get_stats,
             routes::get_stat_history,
             routes::prune_stats,
+            routes::delete_stat,
         ])
         .mount("/", routes![
             routes::llms_txt,

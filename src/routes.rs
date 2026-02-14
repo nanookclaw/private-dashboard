@@ -190,6 +190,34 @@ pub fn prune_stats(
     }))
 }
 
+#[delete("/stats/<key>")]
+pub fn delete_stat(
+    db: &State<Arc<Db>>,
+    auth: ManageKey,
+    key: &str,
+) -> Result<Json<DeleteResponse>, (Status, Json<serde_json::Value>)> {
+    let expected = db.get_manage_key().unwrap_or_default();
+    if auth.0 != expected {
+        return Err((
+            Status::Forbidden,
+            Json(serde_json::json!({"error": "Invalid manage key"})),
+        ));
+    }
+
+    let deleted = db.delete_stats_by_key(key);
+    if deleted == 0 {
+        return Err((
+            Status::NotFound,
+            Json(serde_json::json!({"error": "No stats found for key", "key": key})),
+        ));
+    }
+
+    Ok(Json(DeleteResponse {
+        key: key.to_string(),
+        deleted,
+    }))
+}
+
 // ── llms.txt ──
 #[get("/llms.txt")]
 pub fn llms_txt() -> (ContentType, &'static str) {
@@ -222,6 +250,10 @@ When start and end are provided, period is ignored.
 ### POST /api/v1/stats/prune
 Manually trigger data retention. Deletes stats older than 90 days.
 Requires `Authorization: Bearer <manage_key>`. Returns deleted count and remaining.
+
+### DELETE /api/v1/stats/<key>
+Delete all data points for a specific metric key. Requires `Authorization: Bearer <manage_key>`.
+Returns 404 if the key has no data. Response: `{\"key\": string, \"deleted\": number}`.
 
 ## Auth
 - Read endpoints: No auth (local network only)
