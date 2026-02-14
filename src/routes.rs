@@ -94,12 +94,55 @@ pub fn get_stats(db: &State<Arc<Db>>) -> Json<StatsResponse> {
     Json(StatsResponse { stats })
 }
 
-#[get("/stats/<key>?<period>")]
+#[get("/stats/<key>?<period>&<start>&<end>")]
 pub fn get_stat_history(
     db: &State<Arc<Db>>,
     key: &str,
     period: Option<&str>,
+    start: Option<&str>,
+    end: Option<&str>,
 ) -> Result<Json<StatHistoryResponse>, (Status, Json<serde_json::Value>)> {
+    // If both start and end are provided, use custom date range
+    if let (Some(s), Some(e)) = (start, end) {
+        // Validate ISO-8601 format
+        let start_dt = chrono::DateTime::parse_from_rfc3339(s)
+            .or_else(|_| {
+                // Also accept YYYY-MM-DD format (treat as start of day UTC)
+                chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                    .map(|d| d.and_hms_opt(0, 0, 0).unwrap().and_utc().fixed_offset())
+            });
+        let end_dt = chrono::DateTime::parse_from_rfc3339(e)
+            .or_else(|_| {
+                chrono::NaiveDate::parse_from_str(e, "%Y-%m-%d")
+                    .map(|d| d.and_hms_opt(23, 59, 59).unwrap().and_utc().fixed_offset())
+            });
+
+        match (start_dt, end_dt) {
+            (Ok(s_dt), Ok(e_dt)) => {
+                if s_dt > e_dt {
+                    return Err((
+                        Status::BadRequest,
+                        Json(serde_json::json!({"error": "start must be before end"})),
+                    ));
+                }
+                let points = db.get_stat_history_range(key, &s_dt.to_rfc3339(), &e_dt.to_rfc3339());
+                return Ok(Json(StatHistoryResponse {
+                    key: key.to_string(),
+                    points: points.iter().map(|p| StatPointOut {
+                        value: p.value,
+                        recorded_at: p.recorded_at.clone(),
+                    }).collect(),
+                }));
+            }
+            _ => {
+                return Err((
+                    Status::BadRequest,
+                    Json(serde_json::json!({"error": "Invalid date format. Use ISO-8601 (e.g. 2026-02-01T00:00:00Z) or YYYY-MM-DD"})),
+                ));
+            }
+        }
+    }
+
     let now = Utc::now();
     let since = match period.unwrap_or("24h") {
         "24h" => now - Duration::hours(24),
@@ -173,6 +216,8 @@ No auth required.
 
 ### GET /api/v1/stats/<key>?period=24h|7d|30d|90d
 Returns time-series history for a single metric. Default period: 24h.
+Supports custom date range: ?start=YYYY-MM-DD&end=YYYY-MM-DD (or ISO-8601).
+When start and end are provided, period is ignored.
 
 ### POST /api/v1/stats/prune
 Manually trigger data retention. Deletes stats older than 90 days.

@@ -6,8 +6,14 @@ export async function fetchStats() {
   return res.json();
 }
 
-export async function fetchStatHistory(key, period = '24h') {
-  const res = await fetch(`${BASE}/stats/${encodeURIComponent(key)}?period=${period}`);
+export async function fetchStatHistory(key, period = '24h', start = null, end = null) {
+  let url;
+  if (start && end) {
+    url = `${BASE}/stats/${encodeURIComponent(key)}?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+  } else {
+    url = `${BASE}/stats/${encodeURIComponent(key)}?period=${period}`;
+  }
+  const res = await fetch(url);
   if (!res.ok) throw new Error(`Failed to fetch stat history: ${res.status}`);
   return res.json();
 }

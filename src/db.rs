@@ -98,6 +98,20 @@ impl Db {
         }).unwrap().filter_map(|r| r.ok()).collect()
     }
 
+    pub fn get_stat_history_range(&self, key: &str, start: &str, end: &str) -> Vec<StatPoint> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(
+            "SELECT value, recorded_at FROM stats WHERE key = ?1 AND recorded_at >= ?2 AND recorded_at <= ?3 ORDER BY recorded_at ASC"
+        ).unwrap();
+
+        stmt.query_map(params![key, start, end], |row| {
+            Ok(StatPoint {
+                value: row.get(0)?,
+                recorded_at: row.get(1)?,
+            })
+        }).unwrap().filter_map(|r| r.ok()).collect()
+    }
+
     pub fn get_sparkline(&self, key: &str, since: &str, points: usize) -> Vec<f64> {
         let history = self.get_stat_history(key, since);
         if history.is_empty() {

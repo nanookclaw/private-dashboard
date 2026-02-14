@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { fetchStatHistory } from '../api';
 
-const PERIODS = ['24h', '7d', '30d', '90d'];
+const PERIODS = ['24h', '7d', '30d', '90d', 'custom'];
 
 // Reuse from StatCard
 const UNIT_MAP = {
@@ -235,11 +235,24 @@ function DetailChart({ data, timestamps, color }) {
   );
 }
 
+function getDefaultDateRange() {
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 14);
+  return {
+    start: start.toISOString().slice(0, 10),
+    end: end.toISOString().slice(0, 10),
+  };
+}
+
 export default function MetricDetail({ stat, onClose }) {
   const [period, setPeriod] = useState('7d');
   const [historyData, setHistoryData] = useState(null);
   const [loading, setLoading] = useState(true);
   const modalRef = useRef(null);
+  const defaultRange = getDefaultDateRange();
+  const [customStart, setCustomStart] = useState(defaultRange.start);
+  const [customEnd, setCustomEnd] = useState(defaultRange.end);
 
   const binary = BINARY_METRICS[stat.key];
   const binaryDisplay = binary ? (stat.current >= 1 ? binary.on : binary.off) : null;
@@ -248,7 +261,10 @@ export default function MetricDetail({ stat, onClose }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchStatHistory(stat.key, period).then(data => {
+    const fetchFn = period === 'custom'
+      ? fetchStatHistory(stat.key, null, customStart, customEnd)
+      : fetchStatHistory(stat.key, period);
+    fetchFn.then(data => {
       if (!cancelled) {
         setHistoryData(data.points || []);
         setLoading(false);
@@ -260,7 +276,7 @@ export default function MetricDetail({ stat, onClose }) {
       }
     });
     return () => { cancelled = true; };
-  }, [stat.key, period]);
+  }, [stat.key, period, customStart, customEnd]);
 
   // Close on Escape
   useEffect(() => {
@@ -344,6 +360,7 @@ export default function MetricDetail({ stat, onClose }) {
             <div className="flex gap-2 sm:gap-3 flex-wrap">
               {PERIODS.map(p => {
                 const trend = stat.trends?.[p];
+                const isCustom = p === 'custom';
                 return (
                   <div
                     key={p}
@@ -354,8 +371,12 @@ export default function MetricDetail({ stat, onClose }) {
                     }`}
                     onClick={() => setPeriod(p)}
                   >
-                    <div className="text-[10px] text-slate-500 font-medium uppercase">{p}</div>
-                    {trend && trend.change !== null && trend.change !== undefined ? (
+                    <div className="text-[10px] text-slate-500 font-medium uppercase">
+                      {isCustom ? '📅 Custom' : p}
+                    </div>
+                    {isCustom ? (
+                      <div className="text-[11px] text-slate-500 italic">date range</div>
+                    ) : trend && trend.change !== null && trend.change !== undefined ? (
                       <>
                         <div className={`text-sm font-semibold ${trendColor(trend)}`}>
                           {trendArrow(trend)} {formatNumber(Math.abs(trend.change))}
@@ -373,6 +394,26 @@ export default function MetricDetail({ stat, onClose }) {
                 );
               })}
             </div>
+
+            {/* Custom date range picker */}
+            {period === 'custom' && (
+              <div className="flex gap-3 items-center mt-3 flex-wrap">
+                <label className="text-[11px] text-slate-500 font-medium">From:</label>
+                <input
+                  type="date"
+                  value={customStart}
+                  onChange={(e) => setCustomStart(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-slate-500"
+                />
+                <label className="text-[11px] text-slate-500 font-medium">To:</label>
+                <input
+                  type="date"
+                  value={customEnd}
+                  onChange={(e) => setCustomEnd(e.target.value)}
+                  className="bg-slate-800 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-200 focus:outline-none focus:border-slate-500"
+                />
+              </div>
+            )}
           </div>
 
           {/* Chart */}
@@ -394,7 +435,7 @@ export default function MetricDetail({ stat, onClose }) {
           {historyData && historyData.length > 0 && (
             <div>
               <h3 className="text-[11px] font-medium text-slate-500 uppercase tracking-wider mb-2">
-                Recent Data Points ({historyData.length} total in {period})
+                Recent Data Points ({historyData.length} total in {period === 'custom' ? `${customStart} — ${customEnd}` : period})
               </h3>
               <div className="rounded-lg border border-slate-800/40 overflow-hidden">
                 <table className="w-full text-xs">

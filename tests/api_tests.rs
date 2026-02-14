@@ -873,3 +873,95 @@ fn test_health_oldest_stat_null_when_empty() {
     let body: serde_json::Value = resp.into_json().unwrap();
     assert!(body["oldest_stat"].is_null());
 }
+
+// ── Custom Date Range Tests ──
+
+#[test]
+fn test_stat_history_custom_date_range_iso8601() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert stats at specific times
+    db.insert_stat("cpu", 10.0, "2026-02-01T00:00:00Z", None);
+    db.insert_stat("cpu", 20.0, "2026-02-05T00:00:00Z", None);
+    db.insert_stat("cpu", 30.0, "2026-02-10T00:00:00Z", None);
+    db.insert_stat("cpu", 40.0, "2026-02-15T00:00:00Z", None);
+
+    // Query range that includes middle two
+    let resp = client.get("/api/v1/stats/cpu?start=2026-02-03T00:00:00Z&end=2026-02-12T00:00:00Z").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["key"], "cpu");
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[0]["value"], 20.0);
+    assert_eq!(points[1]["value"], 30.0);
+}
+
+#[test]
+fn test_stat_history_custom_date_range_yyyy_mm_dd() {
+    let (client, _key, db) = test_client_with_db();
+
+    db.insert_stat("mem", 100.0, "2026-02-01T12:00:00Z", None);
+    db.insert_stat("mem", 200.0, "2026-02-10T12:00:00Z", None);
+    db.insert_stat("mem", 300.0, "2026-02-20T12:00:00Z", None);
+
+    // Use YYYY-MM-DD format
+    let resp = client.get("/api/v1/stats/mem?start=2026-02-01&end=2026-02-15").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 2);
+    assert_eq!(points[0]["value"], 100.0);
+    assert_eq!(points[1]["value"], 200.0);
+}
+
+#[test]
+fn test_stat_history_custom_range_start_after_end() {
+    let (client, _key, _db) = test_client_with_db();
+
+    let resp = client.get("/api/v1/stats/test?start=2026-02-20T00:00:00Z&end=2026-02-01T00:00:00Z").dispatch();
+    assert_eq!(resp.status(), Status::BadRequest);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].as_str().unwrap().contains("start must be before end"));
+}
+
+#[test]
+fn test_stat_history_custom_range_invalid_date() {
+    let (client, _key, _db) = test_client_with_db();
+
+    let resp = client.get("/api/v1/stats/test?start=not-a-date&end=2026-02-01").dispatch();
+    assert_eq!(resp.status(), Status::BadRequest);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].as_str().unwrap().contains("Invalid date format"));
+}
+
+#[test]
+fn test_stat_history_custom_range_empty_result() {
+    let (client, _key, db) = test_client_with_db();
+
+    db.insert_stat("disk", 50.0, "2026-01-01T00:00:00Z", None);
+
+    // Query range that doesn't include the data point
+    let resp = client.get("/api/v1/stats/disk?start=2026-02-01T00:00:00Z&end=2026-02-28T00:00:00Z").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 0);
+}
+
+#[test]
+fn test_stat_history_period_still_works() {
+    let (client, _key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now();
+    let recent = (now - chrono::Duration::hours(1)).to_rfc3339();
+    db.insert_stat("net", 42.0, &recent, None);
+
+    // Standard period param still works
+    let resp = client.get("/api/v1/stats/net?period=24h").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["value"], 42.0);
+}
