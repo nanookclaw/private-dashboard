@@ -59,6 +59,7 @@
 - ✅ **Alert history log** — `alert_log` table auto-records significant metric changes on submit; GET /api/v1/alerts with key filter + limit; 10%=alert, 25%=hot, 6h debounce; 9 new tests (2465027)
 - ✅ **Frontend alert history panel** — 🔔 Recent Alerts section below stats grid; color-coded by level (hot=⚡, alert=dot) and direction; expand/collapse for >5 alerts; responsive; auto-refreshes with 60s interval (fbeb7db)
 - ✅ **cron_jobs_active metric** — label, unit suffix ("jobs"), Network group in frontend (17cc44e)
+- ✅ **Kanban board metrics** — 6 new metrics (backlog, up_next, in_progress, review, done, active) with "Work Queue" group, labels, units, tests (1ce57c8)
 
 ## What's Next
 
