@@ -202,6 +202,7 @@
       },
       "get": {
         "summary": "Get time-series history for a single metric",
+        "description": "Returns historical data points for a metric. Use `period` for preset windows, or `start` + `end` for custom date ranges. When `start` and `end` are both provided, `period` is ignored.",
         "operationId": "getStatHistory",
         "parameters": [
           {
@@ -220,7 +221,21 @@
               "enum": ["24h", "7d", "30d", "90d"],
               "default": "24h"
             },
-            "description": "Time window for history"
+            "description": "Time window for history (ignored when start and end are provided)"
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Custom range start — ISO-8601 (e.g. 2026-02-01T00:00:00Z) or YYYY-MM-DD"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Custom range end — ISO-8601 or YYYY-MM-DD. Must be after start."
           }
         ],
         "responses": {
