@@ -20,6 +20,7 @@ const UNIT_MAP = {
   tests_total: 'tests',
   siblings_active: 'online',
   siblings_count: 'agents',
+  cron_jobs_active: 'jobs',
 };
 
 // Binary metrics: show status text instead of numbers

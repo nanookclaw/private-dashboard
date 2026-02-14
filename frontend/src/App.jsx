@@ -18,7 +18,7 @@ const METRIC_GROUPS = [
     id: 'network',
     label: 'Network',
     icon: '🌐',
-    keys: ['agents_discovered', 'siblings_active', 'siblings_count'],
+    keys: ['agents_discovered', 'siblings_active', 'siblings_count', 'cron_jobs_active'],
   },
   {
     id: 'moltbook',

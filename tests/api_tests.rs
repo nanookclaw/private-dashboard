@@ -723,6 +723,7 @@ fn test_key_label_all_known_keys() {
         ("moltbook_health", "Platform Health"),
         ("moltbook_my_posts", "My Posts"),
         ("twitter_accounts", "Tracked Accounts"),
+        ("cron_jobs_active", "Active Cron Jobs"),
     ];
 
     for (key, expected) in known {

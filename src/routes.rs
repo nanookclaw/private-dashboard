@@ -334,7 +334,7 @@ No auth required.
 ## Known Metric Keys
 agents_discovered, moltbook_interesting, moltbook_spam, moltbook_health, moltbook_my_posts,
 outreach_sent, outreach_received, repos_count, tests_total, deploys_count, commits_total,
-twitter_headlines, twitter_accounts, siblings_count, siblings_active
+twitter_headlines, twitter_accounts, siblings_count, siblings_active, cron_jobs_active
 ")
 }
 

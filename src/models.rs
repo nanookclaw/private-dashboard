@@ -117,6 +117,7 @@ pub fn key_label(key: &str) -> String {
         "moltbook_health" => "Platform Health".into(),
         "moltbook_my_posts" => "My Posts".into(),
         "twitter_accounts" => "Tracked Accounts".into(),
+        "cron_jobs_active" => "Active Cron Jobs".into(),
         _ => key.replace('_', " ").to_string(),
     }
 }
