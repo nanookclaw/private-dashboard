@@ -72,5 +72,5 @@
 ## Incoming Directions (Work Queue)
 
 <!-- WORK_QUEUE_DIRECTIONS_START -->
-_All directions completed as of 2026-02-13 23:25 UTC._
+- **2026-02-14 01:10 UTC (Jordan):** Responsive layout is not working properly. Please re-investigate. (task 98f0acf7)
 <!-- WORK_QUEUE_DIRECTIONS_END -->

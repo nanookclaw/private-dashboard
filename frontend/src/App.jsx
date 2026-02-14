@@ -121,9 +121,9 @@ export default function App() {
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col gap-3 sm:gap-4 min-h-0 overflow-y-auto lg:overflow-hidden">
+        <div className="lg:flex-1 flex flex-col gap-3 sm:gap-4 lg:min-h-0 overflow-y-auto lg:overflow-hidden">
           {groups.map(group => (
-            <div key={group.id} className="flex-1 min-h-0 flex flex-col">
+            <div key={group.id} className="lg:flex-1 lg:min-h-0 flex flex-col">
               {/* Group label */}
               <div className="flex items-center gap-2 mb-1.5 flex-shrink-0">
                 <span className="text-[11px] sm:text-xs">{group.icon}</span>
@@ -133,7 +133,7 @@ export default function App() {
                 <div className="flex-1 h-px bg-slate-800/60" />
               </div>
               {/* Group cards */}
-              <div className={`flex-1 grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 min-h-0 ${
+              <div className={`lg:flex-1 grid gap-2 sm:gap-3 grid-cols-1 sm:grid-cols-2 lg:min-h-0 ${
                 group.stats.length <= 2 ? 'lg:grid-cols-2' :
                 group.stats.length === 3 ? 'lg:grid-cols-3' :
                 'lg:grid-cols-4'
