@@ -23,3 +23,9 @@ export async function fetchHealth() {
   if (!res.ok) throw new Error(`Failed to fetch health: ${res.status}`);
   return res.json();
 }
+
+export async function fetchAlerts(limit = 20) {
+  const res = await fetch(`${BASE}/alerts?limit=${limit}`);
+  if (!res.ok) throw new Error(`Failed to fetch alerts: ${res.status}`);
+  return res.json();
+}

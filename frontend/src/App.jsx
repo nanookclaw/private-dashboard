@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { fetchStats, fetchHealth } from './api';
+import { fetchStats, fetchHealth, fetchAlerts } from './api';
 import StatCard from './components/StatCard';
 import MetricDetail from './components/MetricDetail';
+import AlertHistory from './components/AlertHistory';
 
 const REFRESH_INTERVAL = 60_000; // 60 seconds
 
@@ -61,22 +62,28 @@ function groupStats(stats) {
 export default function App() {
   const [stats, setStats] = useState([]);
   const [health, setHealth] = useState(null);
+  const [alerts, setAlerts] = useState([]);
+  const [alertsLoading, setAlertsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [selectedStat, setSelectedStat] = useState(null);
 
   const loadData = async () => {
     try {
-      const [statsData, healthData] = await Promise.all([
+      const [statsData, healthData, alertsData] = await Promise.all([
         fetchStats(),
         fetchHealth(),
+        fetchAlerts(20),
       ]);
       setStats(statsData.stats || []);
       setHealth(healthData);
+      setAlerts(alertsData.alerts || []);
+      setAlertsLoading(false);
       setError(null);
       setLastRefresh(new Date());
     } catch (err) {
       setError(err.message);
+      setAlertsLoading(false);
     }
   };
 
@@ -148,6 +155,9 @@ export default function App() {
           ))}
         </div>
       )}
+      {/* Alert history */}
+      <AlertHistory alerts={alerts} loading={alertsLoading} />
+
       {/* Metric detail modal */}
       {selectedStat && (
         <MetricDetail stat={selectedStat} onClose={() => setSelectedStat(null)} />
