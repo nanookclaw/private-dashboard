@@ -323,10 +323,10 @@ export default function MetricDetail({ stat, onClose }) {
   return (
     <div
       ref={modalRef}
-      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4"
+      className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-0 sm:p-4"
       onClick={handleBackdrop}
     >
-      <div className="bg-slate-900 border border-slate-700/60 rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl">
+      <div className="bg-slate-900 border border-slate-700/60 rounded-none sm:rounded-2xl w-full h-full sm:h-auto sm:max-w-2xl sm:max-h-[90vh] overflow-y-auto shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-800/60">
           <div>
