@@ -4,7 +4,7 @@
 
 **Phase:** Deployed to staging, collector live, data retention active  
 **Tests:** 68 passing  
-**Last Updated:** 2026-02-14 04:07 UTC
+**Last Updated:** 2026-02-14 04:55 UTC
 
 ## What's Done
 
@@ -58,6 +58,7 @@
 - ✅ **CSV export** — Download button in MetricDetail data table exports timestamp+value pairs as CSV (c9436ab)
 - ✅ **Alert history log** — `alert_log` table auto-records significant metric changes on submit; GET /api/v1/alerts with key filter + limit; 10%=alert, 25%=hot, 6h debounce; 9 new tests (2465027)
 - ✅ **Frontend alert history panel** — 🔔 Recent Alerts section below stats grid; color-coded by level (hot=⚡, alert=dot) and direction; expand/collapse for >5 alerts; responsive; auto-refreshes with 60s interval (fbeb7db)
+- ✅ **cron_jobs_active metric** — label, unit suffix ("jobs"), Network group in frontend (17cc44e)
 
 ## What's Next
 

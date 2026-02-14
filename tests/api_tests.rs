@@ -371,6 +371,11 @@ fn test_key_labels() {
     assert_eq!(key_label("repos_count"), "Repositories");
     assert_eq!(key_label("tests_total"), "Total Tests");
     assert_eq!(key_label("siblings_count"), "Sibling Agents");
+    // Kanban metrics
+    assert_eq!(key_label("kanban_backlog"), "Backlog");
+    assert_eq!(key_label("kanban_in_progress"), "In Progress");
+    assert_eq!(key_label("kanban_review"), "In Review");
+    assert_eq!(key_label("kanban_active"), "Active Tasks");
     // Unknown key gets underscores replaced with spaces
     assert_eq!(key_label("custom_metric_name"), "custom metric name");
     assert_eq!(key_label("singleword"), "singleword");

@@ -27,6 +27,12 @@ const METRIC_GROUPS = [
     keys: ['moltbook_health', 'moltbook_interesting', 'moltbook_my_posts', 'moltbook_spam'],
   },
   {
+    id: 'work_queue',
+    label: 'Work Queue',
+    icon: '📋',
+    keys: ['kanban_active', 'kanban_in_progress', 'kanban_review', 'kanban_backlog', 'kanban_up_next', 'kanban_done'],
+  },
+  {
     id: 'social',
     label: 'Social',
     icon: '📡',

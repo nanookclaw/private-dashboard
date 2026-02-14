@@ -21,6 +21,12 @@ const UNIT_MAP = {
   siblings_active: 'online',
   siblings_count: 'agents',
   cron_jobs_active: 'jobs',
+  kanban_backlog: 'tasks',
+  kanban_up_next: 'tasks',
+  kanban_in_progress: 'tasks',
+  kanban_review: 'tasks',
+  kanban_done: 'tasks',
+  kanban_active: 'tasks',
 };
 
 // Binary metrics: show status text instead of numbers

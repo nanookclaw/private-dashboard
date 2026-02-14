@@ -118,6 +118,12 @@ pub fn key_label(key: &str) -> String {
         "moltbook_my_posts" => "My Posts".into(),
         "twitter_accounts" => "Tracked Accounts".into(),
         "cron_jobs_active" => "Active Cron Jobs".into(),
+        "kanban_backlog" => "Backlog".into(),
+        "kanban_up_next" => "Up Next".into(),
+        "kanban_in_progress" => "In Progress".into(),
+        "kanban_review" => "In Review".into(),
+        "kanban_done" => "Done".into(),
+        "kanban_active" => "Active Tasks".into(),
         _ => key.replace('_', " ").to_string(),
     }
 }
