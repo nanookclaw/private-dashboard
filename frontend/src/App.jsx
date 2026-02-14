@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fetchStats, fetchHealth } from './api';
 import StatCard from './components/StatCard';
+import MetricDetail from './components/MetricDetail';
 
 const REFRESH_INTERVAL = 60_000; // 60 seconds
 
@@ -62,6 +63,7 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [error, setError] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
+  const [selectedStat, setSelectedStat] = useState(null);
 
   const loadData = async () => {
     try {
@@ -139,12 +141,16 @@ export default function App() {
                 'lg:grid-cols-4'
               }`}>
                 {group.stats.map(stat => (
-                  <StatCard key={stat.key} stat={stat} />
+                  <StatCard key={stat.key} stat={stat} onClick={() => setSelectedStat(stat)} />
                 ))}
               </div>
             </div>
           ))}
         </div>
+      )}
+      {/* Metric detail modal */}
+      {selectedStat && (
+        <MetricDetail stat={selectedStat} onClose={() => setSelectedStat(null)} />
       )}
     </div>
   );

@@ -114,7 +114,7 @@ function TrendBadge({ trend, period }) {
   );
 }
 
-export default function StatCard({ stat }) {
+export default function StatCard({ stat, onClick }) {
   const [period, setPeriod] = useState('24h');
   const [periodData, setPeriodData] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -186,7 +186,10 @@ export default function StatCard({ stat }) {
   }
 
   return (
-    <div className={`bg-slate-900/80 border rounded-xl px-3 sm:px-4 pt-3 pb-2 flex flex-col min-h-[140px] lg:min-h-0 hover:border-slate-700/60 transition-colors ${borderAlert || 'border-slate-800/60'} ${cardGlow}`}>
+    <div
+      className={`bg-slate-900/80 border rounded-xl px-3 sm:px-4 pt-3 pb-2 flex flex-col min-h-[140px] lg:min-h-0 hover:border-slate-700/60 transition-colors cursor-pointer ${borderAlert || 'border-slate-800/60'} ${cardGlow}`}
+      onClick={onClick}
+    >
       {/* Header row */}
       <div className="flex items-center justify-between flex-shrink-0 mb-1">
         <div className="flex items-center gap-2 min-w-0">
