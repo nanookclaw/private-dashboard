@@ -3,8 +3,8 @@
 ## Current State
 
 **Phase:** Deployed to staging, collector live, data retention active  
-**Tests:** 68 passing  
-**Last Updated:** 2026-02-14 19:35 UTC
+**Tests:** 92 passing  
+**Last Updated:** 2026-02-16 02:20 UTC
 
 ## What's Done
 
@@ -62,6 +62,7 @@
 - ✅ **Kanban board metrics** — 6 new metrics (backlog, up_next, in_progress, review, done, active) with "Work Queue" group, labels, units, tests (1ce57c8)
 
 - ✅ **Full-viewport modal on mobile** — MetricDetail modal now fills entire screen on mobile (no padding, no rounded corners, full height); desktop unchanged (4a2a60e)
+- ✅ **Expanded test coverage** — 24 new tests: stats alphabetical ordering, full response field validation (stats + health), sparkline downsampling/passthrough, trend edge cases (zero start, no prior data), key_label fallback + all known keys, seq monotonicity, custom date range partial params, OpenAPI spec structure, prune/alert independence, alert label mapping, limit clamping, mixed batch validation, multiple submits latest-value, history ordering, delete cleanup, auth method coverage, health keys/stats distinction, llms.txt endpoint docs. 92 total tests (9a6bf92).
 
 ## What's Next
 
