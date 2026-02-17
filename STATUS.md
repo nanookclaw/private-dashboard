@@ -3,8 +3,8 @@
 ## Current State
 
 **Phase:** Deployed to staging, collector live, data retention active  
-**Tests:** 92 passing  
-**Last Updated:** 2026-02-16 02:20 UTC
+**Tests:** 94 passing  
+**Last Updated:** 2026-02-17 10:45 UTC
 
 ## What's Done
 
