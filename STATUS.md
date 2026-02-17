@@ -21,7 +21,7 @@
 - ✅ Auto-generated manage key on first run
 - ✅ Frontend: dark theme dashboard with stat cards, sparklines, trend badges
 - ✅ Frontend: responsive grid, auto-refresh 60s, empty state
-- ✅ 47 HTTP tests (auth, submit, query, validation, trends, batch limits, key labels, llms.txt, openapi, edge cases, prune)
+- ✅ 94 tests (auth, submit, query, validation, trends, batch limits, key labels, llms.txt, openapi, edge cases, prune, skills discovery, sparklines, alerts)
 - ✅ Dockerfile (multi-stage: frontend + backend)
 - ✅ docker-compose.yml (port 3008)
 - ✅ Deployed to staging (192.168.0.79:3008)
