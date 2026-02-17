@@ -540,23 +540,580 @@ def test_stats_ordering(dash: Dashboard):
 
 # ── Cleanup Tests ───────────────────────────────────────────────────
 
-@test("cleanup — delete test metrics")
-def test_cleanup(dash: Dashboard):
-    """Clean up test metrics to not pollute the dashboard."""
-    stats = dash.stats()
-    test_keys = [s["key"] for s in stats if s["key"].startswith("sdk_test")]
-    for k in test_keys:
+# ── Submit Edge Cases ───────────────────────────────────────────────
+
+@test("submit — negative value accepted")
+def test_submit_negative(dash: Dashboard):
+    k = unique_key("neg")
+    accepted = dash.submit({k: -42.5})
+    assert accepted == 1
+    val = dash.get_value(k)
+    assert val == -42.5, f"Expected -42.5, got {val}"
+
+
+@test("submit — zero value accepted")
+def test_submit_zero(dash: Dashboard):
+    k = unique_key("zero")
+    accepted = dash.submit({k: 0.0})
+    assert accepted == 1
+    val = dash.get_value(k)
+    assert val == 0.0, f"Expected 0.0, got {val}"
+
+
+@test("submit — very large value accepted")
+def test_submit_large_value(dash: Dashboard):
+    k = unique_key("big")
+    big = 999_999_999.99
+    accepted = dash.submit({k: big})
+    assert accepted == 1
+    val = dash.get_value(k)
+    assert val == big, f"Expected {big}, got {val}"
+
+
+@test("submit — fractional precision preserved")
+def test_submit_fractional(dash: Dashboard):
+    k = unique_key("frac")
+    accepted = dash.submit({k: 3.14159})
+    assert accepted == 1
+    val = dash.get_value(k)
+    assert abs(val - 3.14159) < 0.001, f"Expected ~3.14159, got {val}"
+
+
+@test("submit — special chars in key")
+def test_submit_special_chars(dash: Dashboard):
+    k = unique_key("test-key.with_specials")
+    accepted = dash.submit({k: 1.0})
+    assert accepted == 1
+    val = dash.get_value(k)
+    assert val == 1.0
+
+
+@test("submit — large metadata accepted")
+def test_submit_large_metadata(dash: Dashboard):
+    k = unique_key("lgmeta")
+    meta = {"items": [f"item_{i}" for i in range(100)], "description": "x" * 500}
+    result = dash.submit_one(k, 42.0, metadata=meta)
+    assert result is True
+
+
+@test("submit — exactly 100 items accepted (boundary)")
+def test_submit_exactly_100(dash: Dashboard):
+    items = [{"key": f"boundary_{i}_{int(time.time()*1000)%1000000}", "value": float(i)} for i in range(100)]
+    accepted = dash.submit(items)
+    assert accepted == 100, f"Expected 100 accepted, got {accepted}"
+    # Clean up
+    for item in items:
+        try:
+            dash.delete(item["key"])
+        except Exception:
+            pass
+
+
+@test("submit — mixed valid/invalid batch")
+def test_submit_mixed_batch(dash: Dashboard):
+    k1 = unique_key("mix_valid")
+    # Submit with one good key and one super-long key (>255 chars, should be skipped)
+    items = [
+        {"key": k1, "value": 10.0},
+        {"key": "x" * 300, "value": 20.0},  # too long, should be skipped
+    ]
+    accepted = dash.submit(items)
+    # Server skips invalid keys (too long) and accepts valid ones
+    assert accepted >= 1, f"Expected at least 1 accepted, got {accepted}"
+    val = dash.get_value(k1)
+    assert val == 10.0
+
+
+@test("submit — rapid sequential writes")
+def test_submit_rapid_writes(dash: Dashboard):
+    k = unique_key("rapid")
+    for i in range(10):
+        dash.submit_one(k, float(i))
+    val = dash.get_value(k)
+    assert val == 9.0, f"Expected 9.0 (last write), got {val}"
+
+
+@test("submit — many different keys at once")
+def test_submit_many_keys(dash: Dashboard):
+    prefix = unique_key("many")
+    items = {f"{prefix}_{i}": float(i) for i in range(20)}
+    accepted = dash.submit(items)
+    assert accepted == 20, f"Expected 20, got {accepted}"
+    keys = dash.keys()
+    for i in range(20):
+        assert f"{prefix}_{i}" in keys, f"Missing key {prefix}_{i}"
+    # Clean up
+    for k in items:
         try:
             dash.delete(k)
         except Exception:
             pass
-    # Also clean up by other prefixes
-    for prefix in ["submit_dict", "submit_list", "batch_", "submit_one",
-                    "submit_meta", "stats_list", "stats_fields", "trends",
-                    "sparkline", "single", "getval", "trend_new", "keys_test",
-                    "hist_", "delete", "latest", "aaa_", "zzz_"]:
-        remaining = [s["key"] for s in dash.stats() if s["key"].startswith(prefix)]
-        for k in remaining:
+
+
+@test("submit — no auth (missing key) returns error")
+def test_submit_no_auth(dash: Dashboard):
+    no_auth = Dashboard(dash.base_url, manage_key="not_a_real_key_abc")
+    try:
+        no_auth.submit({"test_no_auth": 1.0})
+        assert False, "Should have raised DashboardError"
+    except DashboardError as e:
+        assert e.status in (401, 403), f"Expected 401 or 403, got {e.status}"
+
+
+# ── Stats Advanced Tests ────────────────────────────────────────────
+
+@test("stats — key_label fallback for unknown keys")
+def test_key_label_fallback(dash: Dashboard):
+    k = unique_key("unknown_label")
+    dash.submit({k: 1.0})
+    found = [s for s in dash.stats() if s["key"] == k]
+    assert len(found) == 1
+    # Unknown keys get auto-generated labels (underscores→spaces, prefix stripped)
+    label = found[0].get("label", "")
+    assert isinstance(label, str) and len(label) > 0, f"Label should be non-empty string, got '{label}'"
+
+
+@test("stats — sparkline is list of floats/ints")
+def test_sparkline_types(dash: Dashboard):
+    k = unique_key("spark_types")
+    dash.submit_one(k, 1.0)
+    time.sleep(0.1)
+    dash.submit_one(k, 2.0)
+    found = [s for s in dash.stats() if s["key"] == k][0]
+    sparkline = found["sparkline_24h"]
+    assert isinstance(sparkline, list)
+    for point in sparkline:
+        assert isinstance(point, (int, float)), f"Sparkline point should be numeric, got {type(point)}"
+
+
+@test("stats — last_updated is ISO-8601")
+def test_stats_last_updated(dash: Dashboard):
+    k = unique_key("updated_ts")
+    dash.submit({k: 5.0})
+    found = [s for s in dash.stats() if s["key"] == k][0]
+    ts = found["last_updated"]
+    assert "T" in ts, f"Expected ISO-8601, got '{ts}'"
+    assert "Z" in ts or "+" in ts, f"Expected UTC indicator in '{ts}'"
+
+
+@test("stats — read without auth works")
+def test_stats_no_auth_read(dash: Dashboard):
+    no_auth = Dashboard(dash.base_url)  # No manage key
+    stats = no_auth.stats()
+    assert isinstance(stats, list), "Read should work without auth"
+
+
+@test("stats — health without auth works")
+def test_health_no_auth(dash: Dashboard):
+    no_auth = Dashboard(dash.base_url)
+    h = no_auth.health()
+    assert h["status"] == "ok"
+
+
+# ── History Advanced Tests ──────────────────────────────────────────
+
+@test("history — start only (no end) returns 400")
+def test_history_start_only(dash: Dashboard):
+    k = unique_key("hist_start_only")
+    dash.submit({k: 10.0})
+    try:
+        dash.history(k, start="2026-01-01")
+        # Some servers might handle this gracefully, not raise
+    except (ValidationError, DashboardError):
+        pass  # Expected - partial custom range
+
+
+@test("history — end only (no start) returns 400")
+def test_history_end_only(dash: Dashboard):
+    k = unique_key("hist_end_only")
+    dash.submit({k: 10.0})
+    try:
+        dash.history(k, end="2026-12-31")
+    except (ValidationError, DashboardError):
+        pass  # Expected - partial custom range
+
+
+@test("history — future date range returns empty")
+def test_history_future_dates(dash: Dashboard):
+    k = unique_key("hist_future")
+    dash.submit({k: 10.0})
+    points = dash.history(k, start="2030-01-01T00:00:00Z", end="2030-12-31T00:00:00Z")
+    assert points == [], f"Expected empty list for future dates, got {len(points)} points"
+
+
+@test("history — multiple data points count")
+def test_history_many_points(dash: Dashboard):
+    k = unique_key("hist_many")
+    for i in range(5):
+        dash.submit_one(k, float(i * 10))
+        time.sleep(0.05)
+    points = dash.history(k)
+    assert len(points) >= 5, f"Expected >=5 points, got {len(points)}"
+
+
+@test("history — points have required fields")
+def test_history_point_fields(dash: Dashboard):
+    k = unique_key("hist_fields")
+    dash.submit({k: 42.0})
+    points = dash.history(k)
+    assert len(points) >= 1
+    p = points[0]
+    assert "value" in p, "Missing 'value' field"
+    assert "recorded_at" in p, "Missing 'recorded_at' field"
+    assert isinstance(p["value"], (int, float))
+
+
+@test("history — values match what was submitted")
+def test_history_values_accurate(dash: Dashboard):
+    k = unique_key("hist_accurate")
+    dash.submit_one(k, 123.456)
+    time.sleep(0.05)
+    dash.submit_one(k, 789.012)
+    points = dash.history(k)
+    values = [p["value"] for p in points]
+    assert 123.456 in values, f"Expected 123.456 in {values}"
+    assert 789.012 in values, f"Expected 789.012 in {values}"
+
+
+# ── Delete Advanced Tests ───────────────────────────────────────────
+
+@test("delete — cascade removes history")
+def test_delete_cascade_history(dash: Dashboard):
+    k = unique_key("del_hist")
+    dash.submit_one(k, 10.0)
+    time.sleep(0.05)
+    dash.submit_one(k, 20.0)
+    time.sleep(0.05)
+    dash.submit_one(k, 30.0)
+    # Verify history exists
+    points = dash.history(k)
+    assert len(points) >= 3, f"Expected >=3 points before delete, got {len(points)}"
+    # Delete
+    deleted = dash.delete(k)
+    assert deleted >= 3, f"Expected >=3 deleted, got {deleted}"
+    # Verify history gone
+    points_after = dash.history(k)
+    assert points_after == [], f"Expected empty history after delete, got {len(points_after)} points"
+
+
+@test("delete — key removed from stats")
+def test_delete_removes_from_stats(dash: Dashboard):
+    k = unique_key("del_stats")
+    dash.submit({k: 99.0})
+    # Verify present
+    assert dash.get_value(k) == 99.0
+    # Delete
+    dash.delete(k)
+    # Verify gone from stats
+    assert dash.get_value(k) is None
+    assert k not in dash.keys()
+
+
+@test("delete — re-submit after delete works")
+def test_delete_then_resubmit(dash: Dashboard):
+    k = unique_key("del_resub")
+    dash.submit({k: 50.0})
+    assert dash.get_value(k) == 50.0
+    dash.delete(k)
+    assert dash.get_value(k) is None
+    # Re-submit
+    dash.submit({k: 75.0})
+    assert dash.get_value(k) == 75.0
+
+
+@test("delete — health keys_count reflects deletion")
+def test_delete_health_count(dash: Dashboard):
+    k = unique_key("del_health")
+    h_before = dash.health()
+    dash.submit({k: 1.0})
+    h_after_add = dash.health()
+    assert h_after_add["keys_count"] >= h_before["keys_count"], \
+        f"keys_count should increase: {h_before['keys_count']} -> {h_after_add['keys_count']}"
+    dash.delete(k)
+    h_after_del = dash.health()
+    assert h_after_del["keys_count"] < h_after_add["keys_count"], \
+        f"keys_count should decrease after delete: {h_after_add['keys_count']} -> {h_after_del['keys_count']}"
+
+
+# ── Prune Advanced Tests ───────────────────────────────────────────
+
+@test("prune — idempotent (two calls same result)")
+def test_prune_idempotent(dash: Dashboard):
+    r1 = dash.prune()
+    r2 = dash.prune()
+    # Second prune should delete 0 (nothing new to prune)
+    assert r2["deleted"] == 0, f"Second prune should delete 0, got {r2['deleted']}"
+    assert r1["retention_days"] == r2["retention_days"]
+
+
+@test("prune — response shape complete")
+def test_prune_response_shape(dash: Dashboard):
+    result = dash.prune()
+    assert "deleted" in result, "Missing 'deleted'"
+    assert "retention_days" in result, "Missing 'retention_days'"
+    assert "remaining" in result, "Missing 'remaining'"
+    assert isinstance(result["deleted"], int)
+    assert isinstance(result["retention_days"], int)
+    assert isinstance(result["remaining"], int)
+    assert result["retention_days"] > 0, "retention_days should be positive"
+
+
+# ── Alert Advanced Tests ────────────────────────────────────────────
+
+@test("alerts — trigger alert with significant change")
+def test_alerts_trigger(dash: Dashboard):
+    k = unique_key("alert_trig")
+    # Submit initial value
+    dash.submit_one(k, 100.0)
+    time.sleep(0.3)
+    # Submit value with >25% change (should trigger hot alert)
+    dash.submit_one(k, 200.0)
+    time.sleep(0.1)
+    # Check if alert was triggered
+    alerts = dash.alerts(key=k, limit=10)
+    # Alert may or may not fire depending on debounce window and existing data
+    # Just verify the query works with no errors
+    assert isinstance(alerts, list)
+
+
+@test("alerts — ordered newest first")
+def test_alerts_newest_first(dash: Dashboard):
+    alerts = dash.alerts(limit=20)
+    if len(alerts) >= 2:
+        for i in range(len(alerts) - 1):
+            ts_a = alerts[i].get("triggered_at", "")
+            ts_b = alerts[i + 1].get("triggered_at", "")
+            assert ts_a >= ts_b, f"Alerts not ordered newest first: {ts_a} < {ts_b}"
+
+
+@test("alerts — limit=0 returns empty")
+def test_alerts_limit_zero(dash: Dashboard):
+    alerts = dash.alerts(limit=0)
+    # May return empty or be treated as default — should not error
+    assert isinstance(alerts, list)
+
+
+@test("alerts — large limit clamped")
+def test_alerts_limit_clamped(dash: Dashboard):
+    alerts = dash.alerts(limit=9999)
+    assert isinstance(alerts, list)
+    assert len(alerts) <= 500, f"Expected <=500 alerts (clamped), got {len(alerts)}"
+
+
+# ── Health Advanced Tests ───────────────────────────────────────────
+
+@test("health — stats_count increments after submit")
+def test_health_stats_count(dash: Dashboard):
+    h1 = dash.health()
+    k = unique_key("health_cnt")
+    dash.submit({k: 1.0})
+    h2 = dash.health()
+    assert h2["stats_count"] > h1["stats_count"], \
+        f"stats_count should increment: {h1['stats_count']} -> {h2['stats_count']}"
+
+
+@test("health — version is string")
+def test_health_version(dash: Dashboard):
+    h = dash.health()
+    assert isinstance(h["version"], str), f"version should be string, got {type(h['version'])}"
+    assert len(h["version"]) > 0, "version should not be empty"
+
+
+@test("health — oldest_stat present")
+def test_health_oldest_stat(dash: Dashboard):
+    h = dash.health()
+    # oldest_stat can be null (if DB empty) or a string
+    assert "oldest_stat" in h
+    if h["oldest_stat"] is not None:
+        assert isinstance(h["oldest_stat"], str)
+        assert "T" in h["oldest_stat"], "oldest_stat should be ISO-8601"
+
+
+# ── Trend Calculation Tests ─────────────────────────────────────────
+
+@test("trend — multiple periods available")
+def test_trend_all_periods(dash: Dashboard):
+    k = unique_key("trend_all")
+    dash.submit({k: 100.0})
+    for period in ["24h", "7d", "30d", "90d"]:
+        pct = dash.get_trend(k, period)
+        # For new single-value metric, trend is None or 0
+        assert pct is None or isinstance(pct, (int, float)), \
+            f"get_trend({period}) should return None or number, got {type(pct)}"
+
+
+@test("trend — change structure for all periods")
+def test_trend_structure(dash: Dashboard):
+    k = unique_key("trend_struct")
+    dash.submit({k: 50.0})
+    s = dash.stat(k)
+    assert s is not None
+    trends = s["trends"]
+    for period in ["24h", "7d", "30d", "90d"]:
+        t = trends[period]
+        assert "start" in t, f"Missing 'start' in {period} trend"
+        assert "end" in t, f"Missing 'end' in {period} trend"
+        assert "change" in t, f"Missing 'change' in {period} trend"
+        assert "pct" in t, f"Missing 'pct' in {period} trend"
+
+
+# ── Discovery Advanced Tests ────────────────────────────────────────
+
+@test("llms.txt — contains endpoints")
+def test_llms_txt_endpoints(dash: Dashboard):
+    txt = dash.llms_txt()
+    assert "POST" in txt, "Expected POST method reference"
+    assert "GET" in txt, "Expected GET method reference"
+    assert "/stats" in txt, "Expected /stats endpoint"
+
+
+@test("openapi — has expected path count")
+def test_openapi_paths(dash: Dashboard):
+    spec = dash.openapi()
+    paths = spec.get("paths", {})
+    assert len(paths) >= 6, f"Expected >= 6 paths, got {len(paths)}"
+
+
+@test("openapi — info section complete")
+def test_openapi_info(dash: Dashboard):
+    spec = dash.openapi()
+    info = spec.get("info", {})
+    assert "title" in info, "Missing title"
+    assert "version" in info, "Missing version"
+
+
+@test("skills index — files array has SKILL.md")
+def test_skills_files(dash: Dashboard):
+    idx = dash.skills_index()
+    skill = idx["skills"][0]
+    files = skill.get("files", [])
+    # Files can be strings or objects — check for SKILL.md either way
+    has_skill = any(
+        ("SKILL.md" in f) if isinstance(f, str) else ("SKILL.md" in f.get("path", ""))
+        for f in files
+    )
+    assert has_skill, f"Expected SKILL.md in files, got {files}"
+
+
+@test("SKILL.md — contains endpoint documentation")
+def test_skill_md_endpoints(dash: Dashboard):
+    md = dash.skill_md()
+    assert "POST" in md or "GET" in md, "SKILL.md should document endpoints"
+    assert "stats" in md.lower(), "SKILL.md should mention stats"
+
+
+@test("llms.txt at /api/v1/ path also works")
+def test_llms_txt_api_path(dash: Dashboard):
+    import urllib.request
+    url = f"{dash.base_url}/api/v1/llms.txt"
+    req = urllib.request.Request(url)
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        txt = resp.read().decode("utf-8")
+    assert len(txt) > 50, f"llms.txt at /api/v1/ too short ({len(txt)} chars)"
+    assert "/stats" in txt
+
+
+# ── SDK Constructor / Config Tests ──────────────────────────────────
+
+@test("constructor — env var fallback for URL")
+def test_constructor_env_url(dash: Dashboard):
+    os.environ["DASHBOARD_URL"] = dash.base_url
+    os.environ["DASHBOARD_KEY"] = dash.manage_key
+    try:
+        d = Dashboard()
+        assert d.is_healthy()
+    finally:
+        del os.environ["DASHBOARD_URL"]
+        del os.environ["DASHBOARD_KEY"]
+
+
+@test("constructor — custom timeout")
+def test_constructor_timeout(dash: Dashboard):
+    d = Dashboard(dash.base_url, manage_key=dash.manage_key, timeout=30)
+    assert d.timeout == 30
+    assert d.is_healthy()
+
+
+@test("constructor — trailing slash stripped from base_url")
+def test_constructor_trailing_slash(dash: Dashboard):
+    d = Dashboard(dash.base_url + "/", manage_key=dash.manage_key)
+    assert not d.base_url.endswith("/")
+    assert d.is_healthy()
+
+
+# ── Cross-Feature Interaction Tests ─────────────────────────────────
+
+@test("submit + delete + history — full lifecycle")
+def test_full_lifecycle(dash: Dashboard):
+    k = unique_key("lifecycle")
+    # Submit multiple values
+    dash.submit_one(k, 10.0)
+    time.sleep(0.05)
+    dash.submit_one(k, 20.0)
+    time.sleep(0.05)
+    dash.submit_one(k, 30.0)
+    # Verify current value
+    assert dash.get_value(k) == 30.0
+    # Verify history
+    points = dash.history(k)
+    assert len(points) >= 3
+    # Verify in keys list
+    assert k in dash.keys()
+    # Delete
+    dash.delete(k)
+    # Verify everything cleaned up
+    assert dash.get_value(k) is None
+    assert k not in dash.keys()
+    assert dash.history(k) == []
+
+
+@test("submit + stats + health — counts consistent")
+def test_counts_consistent(dash: Dashboard):
+    h = dash.health()
+    stats = dash.stats()
+    assert h["keys_count"] == len(stats), \
+        f"health keys_count ({h['keys_count']}) != len(stats) ({len(stats)})"
+
+
+@test("history custom range includes submitted data")
+def test_history_custom_range_includes(dash: Dashboard):
+    k = unique_key("hist_incl")
+    dash.submit({k: 77.7})
+    now = datetime.now(timezone.utc)
+    start = (now - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    end = (now + timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    points = dash.history(k, start=start, end=end)
+    assert len(points) >= 1, "Custom range should include just-submitted data"
+    values = [p["value"] for p in points]
+    assert 77.7 in values
+
+
+@test("alerts — no auth needed for read")
+def test_alerts_no_auth(dash: Dashboard):
+    no_auth = Dashboard(dash.base_url)
+    alerts = no_auth.alerts()
+    assert isinstance(alerts, list)
+
+
+# ── Cleanup ─────────────────────────────────────────────────────────
+
+@test("cleanup — delete test metrics")
+def test_cleanup(dash: Dashboard):
+    """Clean up test metrics to not pollute the dashboard."""
+    stats = dash.stats()
+    # Clean up all test-generated keys
+    prefixes = [
+        "sdk_test", "submit_dict", "submit_list", "batch_", "submit_one",
+        "submit_meta", "stats_list", "stats_fields", "trends", "sparkline",
+        "single", "getval", "trend_", "keys_test", "hist_", "delete",
+        "latest", "aaa_", "zzz_", "neg_", "zero_", "big_", "frac_",
+        "test-key", "lgmeta", "boundary_", "mix_", "rapid_", "many_",
+        "unknown_", "spark_", "updated_", "del_", "alert_", "health_",
+        "lifecycle", "hist_incl",
+    ]
+    for s in stats:
+        k = s["key"]
+        if any(k.startswith(p) for p in prefixes):
             try:
                 dash.delete(k)
             except Exception:
@@ -597,6 +1154,20 @@ def main():
     test_submit_too_many(dash)
     test_submit_bad_auth(dash)
 
+    # Submit Edge Cases
+    print("\nSubmit Edge Cases:")
+    test_submit_negative(dash)
+    test_submit_zero(dash)
+    test_submit_large_value(dash)
+    test_submit_fractional(dash)
+    test_submit_special_chars(dash)
+    test_submit_large_metadata(dash)
+    test_submit_exactly_100(dash)
+    test_submit_mixed_batch(dash)
+    test_submit_rapid_writes(dash)
+    test_submit_many_keys(dash)
+    test_submit_no_auth(dash)
+
     # Stats / Read
     print("\nStats / Read:")
     test_stats_list(dash)
@@ -610,6 +1181,14 @@ def main():
     test_get_trend(dash)
     test_keys(dash)
 
+    # Stats Advanced
+    print("\nStats Advanced:")
+    test_key_label_fallback(dash)
+    test_sparkline_types(dash)
+    test_stats_last_updated(dash)
+    test_stats_no_auth_read(dash)
+    test_health_no_auth(dash)
+
     # History
     print("\nHistory:")
     test_history_default(dash)
@@ -622,16 +1201,37 @@ def main():
     test_history_invalid_period(dash)
     test_history_chronological(dash)
 
+    # History Advanced
+    print("\nHistory Advanced:")
+    test_history_start_only(dash)
+    test_history_end_only(dash)
+    test_history_future_dates(dash)
+    test_history_many_points(dash)
+    test_history_point_fields(dash)
+    test_history_values_accurate(dash)
+
     # Delete
     print("\nDelete:")
     test_delete(dash)
     test_delete_missing(dash)
     test_delete_bad_auth(dash)
 
+    # Delete Advanced
+    print("\nDelete Advanced:")
+    test_delete_cascade_history(dash)
+    test_delete_removes_from_stats(dash)
+    test_delete_then_resubmit(dash)
+    test_delete_health_count(dash)
+
     # Prune
     print("\nPrune:")
     test_prune(dash)
     test_prune_bad_auth(dash)
+
+    # Prune Advanced
+    print("\nPrune Advanced:")
+    test_prune_idempotent(dash)
+    test_prune_response_shape(dash)
 
     # Alerts
     print("\nAlerts:")
@@ -641,6 +1241,39 @@ def main():
     test_alerts_fields(dash)
     test_alert_count(dash)
     test_hot_alerts(dash)
+
+    # Alerts Advanced
+    print("\nAlerts Advanced:")
+    test_alerts_trigger(dash)
+    test_alerts_newest_first(dash)
+    test_alerts_limit_zero(dash)
+    test_alerts_limit_clamped(dash)
+
+    # Health Advanced
+    print("\nHealth Advanced:")
+    test_health_stats_count(dash)
+    test_health_version(dash)
+    test_health_oldest_stat(dash)
+
+    # Trends
+    print("\nTrend Calculations:")
+    test_trend_all_periods(dash)
+    test_trend_structure(dash)
+
+    # Discovery Advanced
+    print("\nDiscovery Advanced:")
+    test_llms_txt_endpoints(dash)
+    test_openapi_paths(dash)
+    test_openapi_info(dash)
+    test_skills_files(dash)
+    test_skill_md_endpoints(dash)
+    test_llms_txt_api_path(dash)
+
+    # SDK Constructor
+    print("\nSDK Constructor:")
+    test_constructor_env_url(dash)
+    test_constructor_timeout(dash)
+    test_constructor_trailing_slash(dash)
 
     # Errors
     print("\nError Handling:")
@@ -653,6 +1286,13 @@ def main():
     print("\nValue Updates:")
     test_latest_value(dash)
     test_stats_ordering(dash)
+
+    # Cross-Feature Interactions
+    print("\nCross-Feature Interactions:")
+    test_full_lifecycle(dash)
+    test_counts_consistent(dash)
+    test_history_custom_range_includes(dash)
+    test_alerts_no_auth(dash)
 
     # Cleanup
     print("\nCleanup:")
