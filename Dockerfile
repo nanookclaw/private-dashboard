@@ -19,6 +19,11 @@ RUN cargo build --release
 
 # Stage 3: Runtime
 FROM debian:bookworm-slim AS runtime
+
+LABEL org.opencontainers.image.source="https://github.com/Humans-Not-Required/private-dashboard"
+LABEL org.opencontainers.image.description="Private metrics dashboard for AI agent infrastructure"
+LABEL org.opencontainers.image.licenses="MIT"
+
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 
