@@ -335,6 +335,10 @@ No auth required.
 agents_discovered, moltbook_interesting, moltbook_spam, moltbook_health, moltbook_my_posts,
 outreach_sent, outreach_received, repos_count, tests_total, deploys_count, commits_total,
 twitter_headlines, twitter_accounts, siblings_count, siblings_active, cron_jobs_active
+
+## Agent Skills Discovery
+- GET /.well-known/skills/index.json — skills discovery index (Cloudflare RFC). Lists available skills for progressive loading by compatible agents.
+- GET /.well-known/skills/private-dashboard/SKILL.md — integration skill with YAML frontmatter (agentskills.io format). Contains quick start, auth, metric keys, and alert thresholds.
 ")
 }
 
@@ -343,6 +347,127 @@ twitter_headlines, twitter_accounts, siblings_count, siblings_active, cron_jobs_
 pub fn openapi_spec() -> (ContentType, &'static str) {
     (ContentType::JSON, include_str!("../openapi.json"))
 }
+
+// ── Well-Known Skills Discovery (Cloudflare RFC) ──
+
+#[get("/.well-known/skills/index.json")]
+pub fn skills_index() -> (ContentType, &'static str) {
+    (ContentType::JSON, SKILLS_INDEX_JSON)
+}
+
+#[get("/.well-known/skills/private-dashboard/SKILL.md")]
+pub fn skills_skill_md() -> (ContentType, &'static str) {
+    (ContentType::Markdown, SKILL_MD)
+}
+
+const SKILLS_INDEX_JSON: &str = r#"{
+  "skills": [
+    {
+      "name": "private-dashboard",
+      "description": "Integrate with The Pack — an agent operations dashboard for tracking metrics, trends, and alerts across an AI agent collective on a local network.",
+      "files": [
+        "SKILL.md"
+      ]
+    }
+  ]
+}"#;
+
+const SKILL_MD: &str = r#"---
+name: private-dashboard
+description: Integrate with The Pack — an agent operations dashboard for tracking metrics, trends, and alerts across an AI agent collective on a local network.
+---
+
+# Private Dashboard Integration
+
+An operations dashboard for AI agent collectives. Track metrics with automatic trend analysis, sparklines, and anomaly alerts. Designed for LAN-first agent deployments.
+
+## Quick Start
+
+1. **Check health:**
+   ```
+   GET /api/v1/health
+   ```
+
+2. **Submit metrics:**
+   ```
+   POST /api/v1/stats
+   Authorization: Bearer <manage_key>
+   [{"key": "agents_discovered", "value": 42}]
+   ```
+
+3. **Read metrics:**
+   ```
+   GET /api/v1/stats
+   ```
+   Returns all metrics with trends (24h/7d/30d/90d), sparklines, and human-readable labels.
+
+4. **View history:**
+   ```
+   GET /api/v1/stats/agents_discovered?period=7d
+   ```
+
+## Auth Model
+
+- **Read endpoints** (GET stats, alerts, health): No auth required — designed for LAN usage
+- **Write endpoints** (POST stats, prune, DELETE): `Authorization: Bearer <manage_key>`
+- Manage key is auto-generated on first run and printed to stdout
+
+## Core Patterns
+
+### Batch Stat Submission
+Submit up to 100 metrics per batch. Each stat needs a `key` (1-100 chars) and `value` (number):
+```json
+POST /api/v1/stats
+[
+  {"key": "tests_total", "value": 1264},
+  {"key": "repos_count", "value": 9},
+  {"key": "siblings_active", "value": 3, "metadata": {"names": ["Forge","Drift","Lux"]}}
+]
+```
+
+### Automatic Alerts
+Alerts fire automatically when a metric changes ≥10% over 24 hours:
+- **alert** level: ≥10% change
+- **hot** level: ≥25% change
+- Debounced to max 1 alert per key per 6 hours
+
+### Time-Series History
+```
+GET /api/v1/stats/<key>?period=24h    # Last 24 hours
+GET /api/v1/stats/<key>?period=7d     # Last 7 days
+GET /api/v1/stats/<key>?start=2026-02-01&end=2026-02-15  # Custom range
+```
+
+### Data Retention
+Stats older than 90 days are auto-pruned on startup. Manual prune: `POST /api/v1/stats/prune`.
+
+## Known Metric Keys
+
+| Key | Description |
+|-----|-------------|
+| agents_discovered | Total agents tracked |
+| moltbook_interesting | Interesting Moltbook posts found |
+| moltbook_spam | Spam posts filtered |
+| repos_count | Active repositories |
+| tests_total | Total test count across repos |
+| deploys_count | Deployments completed |
+| commits_total | Total commits |
+| siblings_count | Sibling agents known |
+| siblings_active | Currently active siblings |
+| cron_jobs_active | Running cron jobs |
+
+## Gotchas
+
+- Metric keys are case-sensitive and must be 1-100 characters
+- Empty stat arrays return 400, max 100 per batch
+- Trend percentages are `null` when the starting value was 0 (can't compute % from zero)
+- Sparkline data covers last 24h with 12 data points (2-hour buckets)
+- Alert `change_pct` is rounded to 1 decimal place
+
+## Full API Reference
+
+See `/llms.txt` for complete endpoint documentation and `/openapi.json` for the OpenAPI 3.0.3 specification.
+"#;
 
 fn compute_trend(db: &Db, key: &str, current: f64, since: chrono::DateTime<Utc>) -> TrendData {
     // Try exact point at/before window start, fall back to earliest point within window

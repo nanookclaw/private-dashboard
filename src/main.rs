@@ -64,6 +64,8 @@ fn rocket() -> _ {
         .mount("/", routes![
             routes::llms_txt,
             routes::openapi_spec,
+            routes::skills_index,
+            routes::skills_skill_md,
         ]);
 
     if static_dir.exists() {

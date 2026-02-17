@@ -27,6 +27,8 @@ fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
             private_dashboard::routes::openapi_spec,
+            private_dashboard::routes::skills_index,
+            private_dashboard::routes::skills_skill_md,
         ]);
 
     (Client::tracked(rocket).unwrap(), key, db)
@@ -57,6 +59,8 @@ fn test_client() -> (Client, String) {
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
             private_dashboard::routes::openapi_spec,
+            private_dashboard::routes::skills_index,
+            private_dashboard::routes::skills_skill_md,
         ]);
 
     (Client::tracked(rocket).unwrap(), key)
@@ -1834,4 +1838,42 @@ fn test_llms_txt_contains_endpoints() {
     assert!(body.contains("GET /api/v1/alerts"), "Missing alerts endpoint");
     assert!(body.contains("POST /api/v1/stats/prune"), "Missing prune endpoint");
     assert!(body.contains("Bearer"), "Missing auth documentation");
+    assert!(body.contains("/.well-known/skills/"), "Missing skills discovery documentation");
+}
+
+// ── Well-Known Skills Discovery ──
+
+#[test]
+fn test_skills_index_json() {
+    let (client, _) = test_client();
+    let resp = client.get("/.well-known/skills/index.json").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let skills = body["skills"].as_array().unwrap();
+    assert_eq!(skills.len(), 1);
+    assert_eq!(skills[0]["name"], "private-dashboard");
+    assert!(skills[0]["description"].as_str().unwrap().len() > 10);
+    let files = skills[0]["files"].as_array().unwrap();
+    assert!(files.contains(&serde_json::json!("SKILL.md")));
+}
+
+#[test]
+fn test_skills_skill_md() {
+    let (client, _) = test_client();
+    let resp = client.get("/.well-known/skills/private-dashboard/SKILL.md").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+
+    // YAML frontmatter
+    assert!(body.starts_with("---"), "Missing YAML frontmatter");
+    assert!(body.contains("name: private-dashboard"), "Missing skill name");
+    assert!(body.contains("description:"), "Missing skill description");
+
+    // Key content sections
+    assert!(body.contains("## Quick Start"), "Missing Quick Start section");
+    assert!(body.contains("## Auth Model"), "Missing Auth Model section");
+    assert!(body.contains("## Known Metric Keys"), "Missing metric keys section");
+    assert!(body.contains("## Gotchas"), "Missing Gotchas section");
+    assert!(body.contains("/api/v1/stats"), "Missing stats endpoint reference");
+    assert!(body.contains("manage_key"), "Missing auth reference");
 }

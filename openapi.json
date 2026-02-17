@@ -4,10 +4,15 @@
     "title": "The Pack API",
     "description": "Local network stats dashboard for the Humans-Not-Required ecosystem. Displays key operational metrics with trend data across multiple time windows.",
     "version": "0.1.0",
-    "license": { "name": "MIT" }
+    "license": {
+      "name": "MIT"
+    }
   },
   "servers": [
-    { "url": "/api/v1", "description": "API v1" }
+    {
+      "url": "/api/v1",
+      "description": "API v1"
+    }
   ],
   "paths": {
     "/health": {
@@ -22,12 +27,31 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "status": { "type": "string", "example": "ok" },
-                    "version": { "type": "string", "example": "0.1.0" },
-                    "stats_count": { "type": "integer", "example": 42 },
-                    "keys_count": { "type": "integer", "example": 6 },
-                    "retention_days": { "type": "integer", "example": 90 },
-                    "oldest_stat": { "type": "string", "format": "date-time", "nullable": true }
+                    "status": {
+                      "type": "string",
+                      "example": "ok"
+                    },
+                    "version": {
+                      "type": "string",
+                      "example": "0.1.0"
+                    },
+                    "stats_count": {
+                      "type": "integer",
+                      "example": 42
+                    },
+                    "keys_count": {
+                      "type": "integer",
+                      "example": 6
+                    },
+                    "retention_days": {
+                      "type": "integer",
+                      "example": 90
+                    },
+                    "oldest_stat": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
                   }
                 }
               }
@@ -50,7 +74,9 @@
                   "properties": {
                     "stats": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/StatSummary" }
+                      "items": {
+                        "$ref": "#/components/schemas/StatSummary"
+                      }
                     }
                   }
                 }
@@ -62,14 +88,20 @@
       "post": {
         "summary": "Submit a batch of stat snapshots",
         "operationId": "submitStats",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "array",
-                "items": { "$ref": "#/components/schemas/StatInput" },
+                "items": {
+                  "$ref": "#/components/schemas/StatInput"
+                },
                 "maxItems": 100,
                 "minItems": 1
               }
@@ -84,15 +116,24 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "accepted": { "type": "integer", "example": 5 }
+                    "accepted": {
+                      "type": "integer",
+                      "example": 5
+                    }
                   }
                 }
               }
             }
           },
-          "400": { "description": "Empty array or too many stats" },
-          "401": { "description": "Missing Authorization header" },
-          "403": { "description": "Invalid manage key" }
+          "400": {
+            "description": "Empty array or too many stats"
+          },
+          "401": {
+            "description": "Missing Authorization header"
+          },
+          "403": {
+            "description": "Invalid manage key"
+          }
         }
       }
     },
@@ -101,7 +142,11 @@
         "summary": "Trigger data retention pruning",
         "description": "Deletes stats older than the retention period (90 days). Also runs automatically on startup.",
         "operationId": "pruneStats",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
             "description": "Prune results",
@@ -110,37 +155,57 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "deleted": { "type": "integer", "description": "Number of stats deleted" },
-                    "retention_days": { "type": "integer", "example": 90 },
-                    "remaining": { "type": "integer", "description": "Total stats remaining after prune" }
+                    "deleted": {
+                      "type": "integer",
+                      "description": "Number of stats deleted"
+                    },
+                    "retention_days": {
+                      "type": "integer",
+                      "example": 90
+                    },
+                    "remaining": {
+                      "type": "integer",
+                      "description": "Total stats remaining after prune"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "description": "Missing Authorization header" },
-          "403": { "description": "Invalid manage key" }
+          "401": {
+            "description": "Missing Authorization header"
+          },
+          "403": {
+            "description": "Invalid manage key"
+          }
         }
       }
     },
     "/alerts": {
       "get": {
         "summary": "Get alert history log",
-        "description": "Returns logged alert events — significant metric changes (>=10% = alert, >=25% = hot). Auto-recorded on stat submission, debounced to max 1 alert per key per 6 hours.",
+        "description": "Returns logged alert events \u2014 significant metric changes (>=10% = alert, >=25% = hot). Auto-recorded on stat submission, debounced to max 1 alert per key per 6 hours.",
         "operationId": "getAlerts",
         "parameters": [
           {
             "name": "key",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Filter alerts by metric key"
           },
           {
             "name": "limit",
             "in": "query",
             "required": false,
-            "schema": { "type": "integer", "minimum": 1, "maximum": 500, "default": 50 },
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 500,
+              "default": 50
+            },
             "description": "Maximum alerts to return"
           }
         ],
@@ -154,9 +219,14 @@
                   "properties": {
                     "alerts": {
                       "type": "array",
-                      "items": { "$ref": "#/components/schemas/AlertOut" }
+                      "items": {
+                        "$ref": "#/components/schemas/AlertOut"
+                      }
                     },
-                    "total": { "type": "integer", "description": "Total alert count (unfiltered)" }
+                    "total": {
+                      "type": "integer",
+                      "description": "Total alert count (unfiltered)"
+                    }
                   }
                 }
               }
@@ -170,13 +240,19 @@
         "summary": "Delete all data for a metric key",
         "description": "Permanently removes all historical data points for the specified metric key.",
         "operationId": "deleteStat",
-        "security": [{ "bearerAuth": [] }],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "parameters": [
           {
             "name": "key",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Metric key to delete (e.g., moltbook_spam)"
           }
         ],
@@ -188,16 +264,27 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "key": { "type": "string" },
-                    "deleted": { "type": "integer", "description": "Number of data points removed" }
+                    "key": {
+                      "type": "string"
+                    },
+                    "deleted": {
+                      "type": "integer",
+                      "description": "Number of data points removed"
+                    }
                   }
                 }
               }
             }
           },
-          "401": { "description": "Missing Authorization header" },
-          "403": { "description": "Invalid manage key" },
-          "404": { "description": "No stats found for key" }
+          "401": {
+            "description": "Missing Authorization header"
+          },
+          "403": {
+            "description": "Invalid manage key"
+          },
+          "404": {
+            "description": "No stats found for key"
+          }
         }
       },
       "get": {
@@ -209,7 +296,9 @@
             "name": "key",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Metric key (e.g., agents_discovered)"
           },
           {
@@ -218,7 +307,12 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["24h", "7d", "30d", "90d"],
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "90d"
+              ],
               "default": "24h"
             },
             "description": "Time window for history (ignored when start and end are provided)"
@@ -227,15 +321,19 @@
             "name": "start",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" },
-            "description": "Custom range start — ISO-8601 (e.g. 2026-02-01T00:00:00Z) or YYYY-MM-DD"
+            "schema": {
+              "type": "string"
+            },
+            "description": "Custom range start \u2014 ISO-8601 (e.g. 2026-02-01T00:00:00Z) or YYYY-MM-DD"
           },
           {
             "name": "end",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" },
-            "description": "Custom range end — ISO-8601 or YYYY-MM-DD. Must be after start."
+            "schema": {
+              "type": "string"
+            },
+            "description": "Custom range end \u2014 ISO-8601 or YYYY-MM-DD. Must be after start."
           }
         ],
         "responses": {
@@ -246,14 +344,21 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "key": { "type": "string" },
+                    "key": {
+                      "type": "string"
+                    },
                     "points": {
                       "type": "array",
                       "items": {
                         "type": "object",
                         "properties": {
-                          "value": { "type": "number" },
-                          "recorded_at": { "type": "string", "format": "date-time" }
+                          "value": {
+                            "type": "number"
+                          },
+                          "recorded_at": {
+                            "type": "string",
+                            "format": "date-time"
+                          }
                         }
                       }
                     }
@@ -262,7 +367,75 @@
               }
             }
           },
-          "400": { "description": "Invalid period" }
+          "400": {
+            "description": "Invalid period"
+          }
+        }
+      }
+    },
+    "/.well-known/skills/index.json": {
+      "get": {
+        "summary": "Skills discovery index (Cloudflare RFC)",
+        "description": "Lists available integration skills for progressive loading by compatible AI agents.",
+        "operationId": "getSkillsIndex",
+        "tags": [
+          "Discovery"
+        ],
+        "responses": {
+          "200": {
+            "description": "Skills index",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "skills": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "files": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/skills/private-dashboard/SKILL.md": {
+      "get": {
+        "summary": "Integration skill document (agentskills.io format)",
+        "description": "SKILL.md with YAML frontmatter containing quick start guide, auth model, metric keys, and integration patterns.",
+        "operationId": "getSkillMd",
+        "tags": [
+          "Discovery"
+        ],
+        "responses": {
+          "200": {
+            "description": "SKILL.md document",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -278,51 +451,115 @@
     "schemas": {
       "StatInput": {
         "type": "object",
-        "required": ["key", "value"],
+        "required": [
+          "key",
+          "value"
+        ],
         "properties": {
-          "key": { "type": "string", "minLength": 1, "maxLength": 100 },
-          "value": { "type": "number" },
-          "metadata": { "type": "object", "description": "Optional context" }
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "value": {
+            "type": "number"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Optional context"
+          }
         }
       },
       "StatSummary": {
         "type": "object",
         "properties": {
-          "key": { "type": "string" },
-          "label": { "type": "string" },
-          "current": { "type": "number" },
-          "trends": { "$ref": "#/components/schemas/Trends" },
-          "sparkline_24h": { "type": "array", "items": { "type": "number" } },
-          "last_updated": { "type": "string", "format": "date-time" }
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "current": {
+            "type": "number"
+          },
+          "trends": {
+            "$ref": "#/components/schemas/Trends"
+          },
+          "sparkline_24h": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "last_updated": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "Trends": {
         "type": "object",
         "properties": {
-          "24h": { "$ref": "#/components/schemas/TrendData" },
-          "7d": { "$ref": "#/components/schemas/TrendData" },
-          "30d": { "$ref": "#/components/schemas/TrendData" },
-          "90d": { "$ref": "#/components/schemas/TrendData" }
+          "24h": {
+            "$ref": "#/components/schemas/TrendData"
+          },
+          "7d": {
+            "$ref": "#/components/schemas/TrendData"
+          },
+          "30d": {
+            "$ref": "#/components/schemas/TrendData"
+          },
+          "90d": {
+            "$ref": "#/components/schemas/TrendData"
+          }
         }
       },
       "AlertOut": {
         "type": "object",
         "properties": {
-          "key": { "type": "string" },
-          "label": { "type": "string" },
-          "level": { "type": "string", "enum": ["alert", "hot"] },
-          "value": { "type": "number" },
-          "change_pct": { "type": "number" },
-          "triggered_at": { "type": "string", "format": "date-time" }
+          "key": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "level": {
+            "type": "string",
+            "enum": [
+              "alert",
+              "hot"
+            ]
+          },
+          "value": {
+            "type": "number"
+          },
+          "change_pct": {
+            "type": "number"
+          },
+          "triggered_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "TrendData": {
         "type": "object",
         "properties": {
-          "start": { "type": "number", "nullable": true },
-          "end": { "type": "number" },
-          "change": { "type": "number", "nullable": true },
-          "pct": { "type": "number", "nullable": true }
+          "start": {
+            "type": "number",
+            "nullable": true
+          },
+          "end": {
+            "type": "number"
+          },
+          "change": {
+            "type": "number",
+            "nullable": true
+          },
+          "pct": {
+            "type": "number",
+            "nullable": true
+          }
         }
       }
     }
