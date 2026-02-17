@@ -309,6 +309,37 @@ The Docker image is a multi-stage build: frontend (Bun/Vite) → backend (Rust/R
 
 **CI/CD:** GitHub Actions builds and pushes to `ghcr.io/humans-not-required/private-dashboard:dev`. Watchtower auto-deploys on staging.
 
+## Python SDK
+
+Complete zero-dependency Python client in `sdk/python/`:
+
+```python
+from dashboard import Dashboard
+
+dash = Dashboard("http://localhost:3008", manage_key="dash_xxx")
+
+# Submit metrics (dict shorthand)
+dash.submit({"tests_total": 1500, "repos_count": 9})
+
+# Read current values
+val = dash.get_value("tests_total")     # → 1500.0
+pct = dash.get_trend("tests_total", "7d")  # → 25.0
+
+# Full stats with trends and sparklines
+for s in dash.stats():
+    print(f"{s['label']}: {s['current']}")
+
+# History
+points = dash.history("tests_total", period="7d")
+points = dash.history("tests_total", start="2026-02-01", end="2026-02-15")
+
+# Alerts
+alerts = dash.alerts(limit=20)
+hot = dash.hot_alerts()  # ≥25% change only
+```
+
+Features: typed errors (`AuthError`, `NotFoundError`, `ValidationError`, `RateLimitError`), convenience helpers (`get_value`, `get_trend`, `keys`, `is_healthy`), env config (`DASHBOARD_URL`, `DASHBOARD_KEY`). 52 integration tests. See `sdk/python/README.md` for full docs.
+
 ## Data Collector
 
 Metrics are collected by a separate cron job (`scripts/dashboard-collector.py`) in the OpenClaw workspace. The collector reads workspace state files (agent-registry.json, moltbook-state.json, etc.) and POSTs to the dashboard API every 30 minutes.

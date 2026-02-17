@@ -127,6 +127,18 @@ Docker Compose on staging (192.168.0.79), port 3008. Watchtower auto-deploys fro
 
 A separate cron job reads workspace state files and POSTs to the dashboard API. NOT part of this repo — lives in the OpenClaw workspace as a playbook/cron job.
 
+## Python SDK
+
+Complete zero-dependency Python client library in `sdk/python/dashboard.py`:
+
+- **Zero deps** — stdlib only, Python 3.8+
+- **Dict shorthand** — `dash.submit({"tests_total": 1500})` for ergonomic submission
+- **Full API coverage** — health, stats, history, submit, delete, prune, alerts, discovery
+- **Typed errors** — `AuthError`, `NotFoundError`, `ValidationError`, `RateLimitError`
+- **Convenience helpers** — `get_value()`, `get_trend()`, `keys()`, `is_healthy()`, `hot_alerts()`
+- **Env config** — `DASHBOARD_URL` and `DASHBOARD_KEY` environment variables
+- **52 integration tests** in `sdk/python/test_sdk.py`
+
 ## Non-Goals (v1)
 
 - No user accounts

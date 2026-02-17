@@ -3,8 +3,8 @@
 ## Current State
 
 **Phase:** Deployed to staging, collector live, data retention active  
-**Tests:** 94 passing  
-**Last Updated:** 2026-02-17 10:45 UTC
+**Tests:** 94 Rust + 52 Python SDK integration  
+**Last Updated:** 2026-02-17 14:30 UTC
 
 ## What's Done
 
@@ -63,6 +63,8 @@
 
 - ✅ **Full-viewport modal on mobile** — MetricDetail modal now fills entire screen on mobile (no padding, no rounded corners, full height); desktop unchanged (4a2a60e)
 - ✅ **Expanded test coverage** — 24 new tests: stats alphabetical ordering, full response field validation (stats + health), sparkline downsampling/passthrough, trend edge cases (zero start, no prior data), key_label fallback + all known keys, seq monotonicity, custom date range partial params, OpenAPI spec structure, prune/alert independence, alert label mapping, limit clamping, mixed batch validation, multiple submits latest-value, history ordering, delete cleanup, auth method coverage, health keys/stats distinction, llms.txt endpoint docs. 92 total tests (9a6bf92).
+
+- ✅ **Python SDK** — Complete zero-dependency Python client library (`sdk/python/dashboard.py`). Covers all API endpoints (health, stats, history, submit, delete, prune, alerts, discovery). Dict shorthand for ergonomic submission (`dash.submit({"tests_total": 1500})`). Typed error hierarchy (AuthError, NotFoundError, ValidationError, RateLimitError). Convenience helpers (get_value, get_trend, keys, is_healthy, hot_alerts). Env config (DASHBOARD_URL, DASHBOARD_KEY). 52 integration tests. SDK README with full docs and examples.
 
 ## What's Next
 
