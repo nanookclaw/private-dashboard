@@ -54,6 +54,7 @@ fn rocket() -> _ {
         .manage(database)
         .mount("/api/v1", routes![
             routes::health,
+            routes::api_llms_txt,
             routes::submit_stats,
             routes::get_stats,
             routes::get_stat_history,

@@ -17,6 +17,7 @@ fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
         .manage(db.clone())
         .mount("/api/v1", rocket::routes![
             private_dashboard::routes::health,
+            private_dashboard::routes::api_llms_txt,
             private_dashboard::routes::submit_stats,
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
@@ -49,6 +50,7 @@ fn test_client() -> (Client, String) {
         .manage(db)
         .mount("/api/v1", rocket::routes![
             private_dashboard::routes::health,
+            private_dashboard::routes::api_llms_txt,
             private_dashboard::routes::submit_stats,
             private_dashboard::routes::get_stats,
             private_dashboard::routes::get_stat_history,
@@ -420,6 +422,16 @@ fn test_llms_txt() {
     assert!(body.contains("POST /api/v1/stats"));
     assert!(body.contains("GET /api/v1/stats"));
     assert!(body.contains("manage_key"));
+}
+
+#[test]
+fn test_api_llms_txt() {
+    let (client, _) = test_client();
+    let response = client.get("/api/v1/llms.txt").dispatch();
+    assert_eq!(response.status(), Status::Ok);
+    let body = response.into_string().unwrap();
+    assert!(body.contains("The Pack"));
+    assert!(body.contains("POST /api/v1/stats"));
 }
 
 #[test]

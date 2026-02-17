@@ -342,6 +342,12 @@ twitter_headlines, twitter_accounts, siblings_count, siblings_active, cron_jobs_
 ")
 }
 
+/// API-level /api/v1/llms.txt mirror for consistency across HNR services
+#[get("/llms.txt")]
+pub fn api_llms_txt() -> (ContentType, &'static str) {
+    llms_txt()
+}
+
 // ── OpenAPI spec ──
 #[get("/openapi.json")]
 pub fn openapi_spec() -> (ContentType, &'static str) {
