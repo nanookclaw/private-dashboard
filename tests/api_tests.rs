@@ -24,6 +24,7 @@ fn test_client_with_db() -> (Client, String, Arc<private_dashboard::db::Db>) {
             private_dashboard::routes::prune_stats,
             private_dashboard::routes::delete_stat,
             private_dashboard::routes::get_alerts,
+            private_dashboard::routes::api_skills_skill_md,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -57,6 +58,7 @@ fn test_client() -> (Client, String) {
             private_dashboard::routes::prune_stats,
             private_dashboard::routes::delete_stat,
             private_dashboard::routes::get_alerts,
+            private_dashboard::routes::api_skills_skill_md,
         ])
         .mount("/", rocket::routes![
             private_dashboard::routes::llms_txt,
@@ -1888,4 +1890,14 @@ fn test_skills_skill_md() {
     assert!(body.contains("## Gotchas"), "Missing Gotchas section");
     assert!(body.contains("/api/v1/stats"), "Missing stats endpoint reference");
     assert!(body.contains("manage_key"), "Missing auth reference");
+}
+
+#[test]
+fn test_api_v1_skills_skill_md() {
+    let (client, _) = test_client();
+    let resp = client.get("/api/v1/skills/SKILL.md").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body = resp.into_string().unwrap();
+    assert!(body.starts_with("---"), "Missing YAML frontmatter");
+    assert!(body.contains("name: private-dashboard"), "Missing skill name");
 }

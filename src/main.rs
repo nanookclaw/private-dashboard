@@ -61,6 +61,7 @@ fn rocket() -> _ {
             routes::prune_stats,
             routes::delete_stat,
             routes::get_alerts,
+            routes::api_skills_skill_md,
         ])
         .mount("/", routes![
             routes::llms_txt,
