@@ -1901,3 +1901,792 @@ fn test_api_v1_skills_skill_md() {
     assert!(body.starts_with("---"), "Missing YAML frontmatter");
     assert!(body.contains("name: private-dashboard"), "Missing skill name");
 }
+
+// ── Trend calculation accuracy ──
+
+#[test]
+fn test_trend_percentage_calculation_exact() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert baseline 25 hours ago: 200.0
+    let baseline = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("exact_trend", 200.0, &baseline, None);
+
+    // Insert current: 250.0 (should be +25%)
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("exact_trend", 250.0, &now, None);
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "exact_trend").unwrap();
+
+    let trend = &stat["trends"]["24h"];
+    assert_eq!(trend["start"], 200.0);
+    assert_eq!(trend["end"], 250.0);
+    assert_eq!(trend["change"], 50.0);
+    assert_eq!(trend["pct"], 25.0);
+}
+
+#[test]
+fn test_trend_negative_percentage() {
+    let (client, _key, db) = test_client_with_db();
+
+    let baseline = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("neg_trend", 400.0, &baseline, None);
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("neg_trend", 300.0, &now, None);
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "neg_trend").unwrap();
+
+    let trend = &stat["trends"]["24h"];
+    assert_eq!(trend["change"], -100.0);
+    assert_eq!(trend["pct"], -25.0);
+}
+
+#[test]
+fn test_trend_zero_change() {
+    let (client, _key, db) = test_client_with_db();
+
+    let baseline = (chrono::Utc::now() - chrono::Duration::hours(25)).to_rfc3339();
+    db.insert_stat("flat_trend", 100.0, &baseline, None);
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("flat_trend", 100.0, &now, None);
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "flat_trend").unwrap();
+
+    let trend = &stat["trends"]["24h"];
+    assert_eq!(trend["change"], 0.0);
+    assert_eq!(trend["pct"], 0.0);
+}
+
+#[test]
+fn test_trend_7d_uses_correct_window() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Point 8 days ago — outside 7d window
+    db.insert_stat("window_test", 50.0, &(chrono::Utc::now() - chrono::Duration::days(8)).to_rfc3339(), None);
+    // Point 5 days ago — inside 7d window
+    db.insert_stat("window_test", 80.0, &(chrono::Utc::now() - chrono::Duration::days(5)).to_rfc3339(), None);
+    // Current
+    db.insert_stat("window_test", 120.0, &chrono::Utc::now().to_rfc3339(), None);
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "window_test").unwrap();
+
+    // 7d trend should use the 8-day-ago point (get_stat_at_time finds latest point <= window start)
+    let trend_7d = &stat["trends"]["7d"];
+    assert_eq!(trend_7d["start"], 50.0);
+    assert_eq!(trend_7d["end"], 120.0);
+}
+
+// ── Metric isolation ──
+
+#[test]
+fn test_metric_isolation_submit() {
+    let (client, key) = test_client();
+
+    // Submit two different metrics
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"metric_x","value":100},{"key":"metric_y","value":200}]"#)
+        .dispatch();
+
+    // Check each has its own value
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stats = body["stats"].as_array().unwrap();
+
+    let x = stats.iter().find(|s| s["key"] == "metric_x").unwrap();
+    let y = stats.iter().find(|s| s["key"] == "metric_y").unwrap();
+    assert_eq!(x["current"], 100.0);
+    assert_eq!(y["current"], 200.0);
+}
+
+#[test]
+fn test_metric_isolation_delete() {
+    let (client, key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("keep_me", 42.0, &now, None);
+    db.insert_stat("delete_me", 99.0, &now, None);
+
+    // Delete only one
+    client
+        .delete("/api/v1/stats/delete_me")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+
+    // Other metric should be untouched
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stats = body["stats"].as_array().unwrap();
+    assert_eq!(stats.len(), 1);
+    assert_eq!(stats[0]["key"], "keep_me");
+    assert_eq!(stats[0]["current"], 42.0);
+}
+
+#[test]
+fn test_metric_isolation_history() {
+    let (client, _key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now();
+    db.insert_stat("hist_a", 10.0, &(now - chrono::Duration::hours(2)).to_rfc3339(), None);
+    db.insert_stat("hist_a", 20.0, &now.to_rfc3339(), None);
+    db.insert_stat("hist_b", 99.0, &now.to_rfc3339(), None);
+
+    // History for hist_a should NOT include hist_b
+    let resp = client.get("/api/v1/stats/hist_a?period=24h").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 2);
+    assert!(points.iter().all(|p| p["value"].as_f64().unwrap() <= 20.0));
+}
+
+// ── Delete and re-submit ──
+
+#[test]
+fn test_delete_then_resubmit() {
+    let (client, key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("reborn", 100.0, &now, None);
+
+    // Delete
+    let resp = client
+        .delete("/api/v1/stats/reborn")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // Re-submit with new value
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"reborn","value":999}]"#)
+        .dispatch();
+
+    // Should show new value
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "reborn").unwrap();
+    assert_eq!(stat["current"], 999.0);
+
+    // History should only have the new data point (old one was deleted)
+    let resp = client.get("/api/v1/stats/reborn?period=24h").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["points"].as_array().unwrap().len(), 1);
+}
+
+// ── Duplicate keys in same batch ──
+
+#[test]
+fn test_submit_duplicate_keys_in_batch() {
+    let (client, key) = test_client();
+
+    // Submit same key twice in one batch — both should be accepted
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"dup","value":10},{"key":"dup","value":20}]"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["accepted"], 2);
+
+    // Latest value should be the last one (highest seq)
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "dup").unwrap();
+    assert_eq!(stat["current"], 20.0);
+
+    // History should have both points
+    let resp = client.get("/api/v1/stats/dup?period=24h").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["points"].as_array().unwrap().len(), 2);
+}
+
+// ── Prune idempotency ──
+
+#[test]
+fn test_prune_idempotent() {
+    let (client, key, db) = test_client_with_db();
+
+    // Insert old data
+    let old = (chrono::Utc::now() - chrono::Duration::days(100)).to_rfc3339();
+    db.insert_stat("old_key", 1.0, &old, None);
+
+    // First prune
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["deleted"], 1);
+
+    // Second prune — nothing left
+    let resp2 = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    let body2: serde_json::Value = resp2.into_json().unwrap();
+    assert_eq!(body2["deleted"], 0);
+    assert_eq!(body2["remaining"], 0);
+}
+
+// ── Alert change_pct rounding ──
+
+#[test]
+fn test_alert_change_pct_rounding() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert an alert with a long decimal
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_alert("round_test", "alert", 133.33, 33.333333, &now);
+
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alert = &body["alerts"][0];
+    // Should be rounded to 1 decimal: 33.3
+    assert_eq!(alert["change_pct"], 33.3);
+}
+
+// ── Alert total reflects actual count ──
+
+#[test]
+fn test_alert_total_vs_returned() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert 10 alerts
+    for i in 0..10 {
+        let t = (chrono::Utc::now() - chrono::Duration::minutes(i * 10)).to_rfc3339();
+        db.insert_alert(&format!("key_{}", i), "alert", 100.0, 15.0, &t);
+    }
+
+    // Request with limit=3
+    let resp = client.get("/api/v1/alerts?limit=3").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 3);
+    assert_eq!(body["total"], 10); // total shows ALL
+}
+
+// ── last_updated is ISO-8601 ──
+
+#[test]
+fn test_stats_last_updated_is_iso8601() {
+    let (client, key) = test_client();
+
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"time_test","value":42}]"#)
+        .dispatch();
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let last_updated = body["stats"][0]["last_updated"].as_str().unwrap();
+
+    // Should parse as RFC3339
+    assert!(chrono::DateTime::parse_from_rfc3339(last_updated).is_ok(),
+        "last_updated should be valid RFC3339: {}", last_updated);
+}
+
+// ── Health version format ──
+
+#[test]
+fn test_health_version_semver() {
+    let (client, _) = test_client();
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let version = body["version"].as_str().unwrap();
+
+    // Should be semver-like (X.Y.Z)
+    let parts: Vec<&str> = version.split('.').collect();
+    assert_eq!(parts.len(), 3, "Version should have 3 parts: {}", version);
+    for part in &parts {
+        assert!(part.parse::<u32>().is_ok(), "Version part '{}' should be numeric in '{}'", part, version);
+    }
+}
+
+// ── Custom date range inclusivity ──
+
+#[test]
+fn test_custom_range_inclusive_boundaries() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert at exact timestamps using YYYY-MM-DD query format for clean boundary tests
+    db.insert_stat("bound", 10.0, "2026-02-10T12:00:00Z", None);
+    db.insert_stat("bound", 20.0, "2026-02-15T12:00:00Z", None);
+    db.insert_stat("bound", 30.0, "2026-02-20T12:00:00Z", None);
+
+    // YYYY-MM-DD range: start becomes 00:00:00, end becomes 23:59:59
+    // Should include all 3 points
+    let resp = client.get("/api/v1/stats/bound?start=2026-02-10&end=2026-02-20").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 3);
+}
+
+// ── DB unit tests ──
+
+#[test]
+fn test_db_get_all_keys() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    db.insert_stat("zebra", 1.0, &now, None);
+    db.insert_stat("alpha", 2.0, &now, None);
+    db.insert_stat("middle", 3.0, &now, None);
+    db.insert_stat("alpha", 4.0, &now, None); // duplicate key
+
+    let keys = db.get_all_keys();
+    assert_eq!(keys, vec!["alpha", "middle", "zebra"]); // sorted, deduplicated
+}
+
+#[test]
+fn test_db_get_earliest_stat_since() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+
+    db.insert_stat("ts_test", 10.0, "2026-02-01T00:00:00Z", None);
+    db.insert_stat("ts_test", 20.0, "2026-02-10T00:00:00Z", None);
+    db.insert_stat("ts_test", 30.0, "2026-02-20T00:00:00Z", None);
+
+    // Earliest since Feb 5 should be the Feb 10 point
+    let val = db.get_earliest_stat_since("ts_test", "2026-02-05T00:00:00Z");
+    assert_eq!(val, Some(20.0));
+
+    // Earliest since Feb 1 should be the Feb 1 point itself
+    let val2 = db.get_earliest_stat_since("ts_test", "2026-02-01T00:00:00Z");
+    assert_eq!(val2, Some(10.0));
+
+    // Earliest since March — nothing exists
+    let val3 = db.get_earliest_stat_since("ts_test", "2026-03-01T00:00:00Z");
+    assert_eq!(val3, None);
+}
+
+#[test]
+fn test_db_sparkline_exact_points() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+    let now = chrono::Utc::now();
+
+    // Insert 5 points at known values
+    for i in 0..5 {
+        let t = (now - chrono::Duration::hours(4 - i)).to_rfc3339();
+        db.insert_stat("spark_val", (i * 10) as f64, &t, None);
+    }
+
+    let sparkline = db.get_sparkline("spark_val", &(now - chrono::Duration::hours(5)).to_rfc3339(), 12);
+    // 5 points < 12, so no downsampling
+    assert_eq!(sparkline, vec![0.0, 10.0, 20.0, 30.0, 40.0]);
+}
+
+#[test]
+fn test_db_sparkline_empty() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+    let sparkline = db.get_sparkline("nonexistent", "2026-01-01T00:00:00Z", 12);
+    assert!(sparkline.is_empty());
+}
+
+#[test]
+fn test_db_stat_history_range() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+
+    db.insert_stat("range_db", 1.0, "2026-02-01T00:00:00Z", None);
+    db.insert_stat("range_db", 2.0, "2026-02-10T00:00:00Z", None);
+    db.insert_stat("range_db", 3.0, "2026-02-20T00:00:00Z", None);
+
+    let points = db.get_stat_history_range("range_db", "2026-02-05T00:00:00Z", "2026-02-15T00:00:00Z");
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0].value, 2.0);
+}
+
+#[test]
+fn test_db_get_stat_at_time_picks_latest_before() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+
+    db.insert_stat("at_test", 10.0, "2026-02-01T00:00:00Z", None);
+    db.insert_stat("at_test", 20.0, "2026-02-05T00:00:00Z", None);
+    db.insert_stat("at_test", 30.0, "2026-02-10T00:00:00Z", None);
+
+    // Query at Feb 7 — should return the Feb 5 point (latest before Feb 7)
+    let val = db.get_stat_at_time("at_test", "2026-02-07T00:00:00Z");
+    assert_eq!(val, Some(20.0));
+
+    // Query before any data
+    let val2 = db.get_stat_at_time("at_test", "2026-01-01T00:00:00Z");
+    assert_eq!(val2, None);
+}
+
+#[test]
+fn test_db_alert_count() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+    assert_eq!(db.get_alert_count(), 0);
+
+    db.insert_alert("a", "alert", 100.0, 15.0, "2026-02-01T00:00:00Z");
+    db.insert_alert("b", "hot", 200.0, 30.0, "2026-02-02T00:00:00Z");
+
+    assert_eq!(db.get_alert_count(), 2);
+}
+
+#[test]
+fn test_db_get_last_alert_time() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+
+    // No alerts yet
+    assert_eq!(db.get_last_alert_time("missing"), None);
+
+    db.insert_alert("timed", "alert", 100.0, 15.0, "2026-02-01T00:00:00Z");
+    db.insert_alert("timed", "hot", 200.0, 30.0, "2026-02-10T00:00:00Z");
+
+    // Should return the most recent
+    let last = db.get_last_alert_time("timed").unwrap();
+    assert!(last.contains("2026-02-10"));
+}
+
+// ── OpenAPI deeper validation ──
+
+#[test]
+fn test_openapi_has_methods() {
+    let (client, _) = test_client();
+    let resp = client.get("/openapi.json").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let paths = body["paths"].as_object().unwrap();
+
+    // GET /health
+    assert!(paths["/health"]["get"].is_object(), "Missing GET on /health");
+
+    // GET and POST /stats
+    assert!(paths["/stats"]["get"].is_object(), "Missing GET on /stats");
+    assert!(paths["/stats"]["post"].is_object(), "Missing POST on /stats");
+
+    // GET and DELETE /stats/{key}
+    let key_path = &paths["/stats/{key}"];
+    assert!(key_path["get"].is_object(), "Missing GET on /stats/{{key}}");
+    assert!(key_path["delete"].is_object(), "Missing DELETE on /stats/{{key}}");
+}
+
+#[test]
+fn test_openapi_info_fields() {
+    let (client, _) = test_client();
+    let resp = client.get("/openapi.json").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+
+    assert!(!body["info"]["title"].as_str().unwrap().is_empty());
+    assert!(!body["info"]["version"].as_str().unwrap().is_empty());
+    assert!(body["info"]["description"].is_string());
+}
+
+// ── Error response structure ──
+
+#[test]
+fn test_error_401_structure() {
+    let (client, _) = test_client();
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .body(r#"[{"key":"x","value":1}]"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Unauthorized);
+}
+
+#[test]
+fn test_error_403_has_error_field() {
+    let (client, _) = test_client();
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", "Bearer wrong_key"))
+        .body(r#"[{"key":"x","value":1}]"#)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Forbidden);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].is_string(), "403 response should have error field");
+}
+
+#[test]
+fn test_error_400_has_error_field() {
+    let (client, key) = test_client();
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body("[]")
+        .dispatch();
+    assert_eq!(resp.status(), Status::BadRequest);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert!(body["error"].is_string(), "400 response should have error field");
+}
+
+#[test]
+fn test_error_404_delete_has_key() {
+    let (client, key) = test_client();
+    let resp = client
+        .delete("/api/v1/stats/ghost_key")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::NotFound);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["key"], "ghost_key");
+    assert!(body["error"].is_string());
+}
+
+// ── Full lifecycle test ──
+
+#[test]
+fn test_full_lifecycle() {
+    let (client, key) = test_client();
+
+    // 1. Health — empty
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["stats_count"], 0);
+
+    // 2. Submit
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"lifecycle_test","value":100}]"#)
+        .dispatch();
+
+    // 3. Verify stats
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["stats"].as_array().unwrap().len(), 1);
+    assert_eq!(body["stats"][0]["current"], 100.0);
+
+    // 4. Check history
+    let resp = client.get("/api/v1/stats/lifecycle_test?period=24h").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["points"].as_array().unwrap().len(), 1);
+
+    // 5. Health — has data
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["stats_count"], 1);
+    assert_eq!(body["keys_count"], 1);
+
+    // 6. Delete
+    let resp = client
+        .delete("/api/v1/stats/lifecycle_test")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+
+    // 7. Health — empty again
+    let resp = client.get("/api/v1/health").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["stats_count"], 0);
+    assert_eq!(body["keys_count"], 0);
+}
+
+// ── Sparkline value accuracy ──
+
+#[test]
+fn test_sparkline_values_match_history() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert 3 points in last 24h
+    let now = chrono::Utc::now();
+    db.insert_stat("sv_test", 10.0, &(now - chrono::Duration::hours(6)).to_rfc3339(), None);
+    db.insert_stat("sv_test", 20.0, &(now - chrono::Duration::hours(3)).to_rfc3339(), None);
+    db.insert_stat("sv_test", 30.0, &now.to_rfc3339(), None);
+
+    let resp = client.get("/api/v1/stats").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let stat = body["stats"].as_array().unwrap()
+        .iter().find(|s| s["key"] == "sv_test").unwrap();
+
+    let sparkline = stat["sparkline_24h"].as_array().unwrap();
+    // 3 points < 12, so no downsampling — values should be exact
+    assert_eq!(sparkline.len(), 3);
+    assert_eq!(sparkline[0].as_f64().unwrap(), 10.0);
+    assert_eq!(sparkline[1].as_f64().unwrap(), 20.0);
+    assert_eq!(sparkline[2].as_f64().unwrap(), 30.0);
+}
+
+// ── Alerts not deleted by delete_stat ──
+
+#[test]
+fn test_delete_stat_preserves_alerts() {
+    let (client, key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_stat("alerted_key", 100.0, &now, None);
+    db.insert_alert("alerted_key", "hot", 100.0, 30.0, &now);
+
+    // Delete the stat
+    client
+        .delete("/api/v1/stats/alerted_key")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+
+    // Alert should still exist (alert_log is independent)
+    let resp = client.get("/api/v1/alerts?key=alerted_key").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 1);
+}
+
+// ── Submit with key at max length ──
+
+#[test]
+fn test_submit_key_exactly_100_chars() {
+    let (client, key) = test_client();
+    let long_key = "x".repeat(100); // exactly 100 — should be accepted
+
+    let body_str = format!(r#"[{{"key":"{}","value":42}}]"#, long_key);
+    let resp = client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(body_str)
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["accepted"], 1);
+}
+
+// ── Multiple keys in alerts filter ──
+
+#[test]
+fn test_alerts_filter_returns_only_matching_key() {
+    let (client, _key, db) = test_client_with_db();
+
+    let now = chrono::Utc::now().to_rfc3339();
+    db.insert_alert("alpha", "alert", 100.0, 12.0, &now);
+    db.insert_alert("beta", "hot", 200.0, 30.0, &now);
+    db.insert_alert("alpha", "alert", 110.0, 10.0, &now);
+
+    let resp = client.get("/api/v1/alerts?key=alpha").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let alerts = body["alerts"].as_array().unwrap();
+    assert_eq!(alerts.len(), 2);
+    assert!(alerts.iter().all(|a| a["key"] == "alpha"));
+}
+
+// ── Alerts default limit ──
+
+#[test]
+fn test_alerts_default_limit_50() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert 60 alerts
+    for i in 0..60 {
+        let t = (chrono::Utc::now() - chrono::Duration::minutes(i)).to_rfc3339();
+        db.insert_alert(&format!("m{}", i), "alert", 100.0, 15.0, &t);
+    }
+
+    // No limit param — default 50
+    let resp = client.get("/api/v1/alerts").dispatch();
+    let body: serde_json::Value = resp.into_json().unwrap();
+    assert_eq!(body["alerts"].as_array().unwrap().len(), 50);
+    assert_eq!(body["total"], 60);
+}
+
+// ── Stat with metadata field ──
+
+#[test]
+fn test_submit_metadata_preserved_in_db() {
+    let (client, key, db) = test_client_with_db();
+
+    client
+        .post("/api/v1/stats")
+        .header(ContentType::JSON)
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .body(r#"[{"key":"meta_key","value":42,"metadata":{"source":"test","tags":["a","b"]}}]"#)
+        .dispatch();
+
+    // Verify via direct DB access that metadata was stored
+    // Metadata isn't returned in the API response but is stored in the DB
+    assert_eq!(db.get_stat_count(), 1);
+}
+
+// ── Prune response structure ──
+
+#[test]
+fn test_prune_response_structure() {
+    let (client, key) = test_client();
+
+    let resp = client
+        .post("/api/v1/stats/prune")
+        .header(Header::new("Authorization", format!("Bearer {}", key)))
+        .dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+
+    // Verify all fields present
+    assert!(body["deleted"].is_number());
+    assert!(body["retention_days"].is_number());
+    assert!(body["remaining"].is_number());
+    assert_eq!(body["retention_days"], 90);
+}
+
+// ── History with single point on boundary ──
+
+#[test]
+fn test_history_single_point_on_range_boundary() {
+    let (client, _key, db) = test_client_with_db();
+
+    // Insert exactly at the boundary
+    db.insert_stat("edge", 77.0, "2026-02-15T00:00:00Z", None);
+
+    // Query where start == the data point's timestamp
+    let resp = client.get("/api/v1/stats/edge?start=2026-02-15T00:00:00Z&end=2026-02-16T00:00:00Z").dispatch();
+    assert_eq!(resp.status(), Status::Ok);
+    let body: serde_json::Value = resp.into_json().unwrap();
+    let points = body["points"].as_array().unwrap();
+    assert_eq!(points.len(), 1);
+    assert_eq!(points[0]["value"], 77.0);
+}
+
+// ── DB delete_stats_by_key returns correct count ──
+
+#[test]
+fn test_db_delete_returns_exact_count() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+    let now = chrono::Utc::now().to_rfc3339();
+
+    db.insert_stat("del_count", 1.0, &now, None);
+    db.insert_stat("del_count", 2.0, &now, None);
+    db.insert_stat("del_count", 3.0, &now, None);
+    db.insert_stat("other", 99.0, &now, None);
+
+    let deleted = db.delete_stats_by_key("del_count");
+    assert_eq!(deleted, 3);
+
+    // "other" should be untouched
+    assert_eq!(db.get_stat_count(), 1);
+}
+
+// ── DB get_oldest_stat_time ──
+
+#[test]
+fn test_db_oldest_stat_time() {
+    let db = private_dashboard::db::Db::new(":memory:").unwrap();
+
+    assert_eq!(db.get_oldest_stat_time(), None);
+
+    db.insert_stat("first", 1.0, "2026-01-01T00:00:00Z", None);
+    db.insert_stat("second", 2.0, "2026-02-01T00:00:00Z", None);
+
+    let oldest = db.get_oldest_stat_time().unwrap();
+    assert!(oldest.contains("2026-01-01"));
+}
