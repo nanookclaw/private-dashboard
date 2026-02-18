@@ -262,6 +262,23 @@ class Dashboard:
         """GET /.well-known/skills/private-dashboard/SKILL.md — integration skill."""
         return self._get_text("/.well-known/skills/private-dashboard/SKILL.md")
 
+    def llms_txt_root(self) -> str:
+        """GET /llms.txt — root-level AI-readable API summary."""
+        return self._get_text("/llms.txt")
+
+    def llms_txt_v1(self) -> str:
+        """GET /api/v1/llms.txt — API-level AI-readable summary."""
+        return self._get_text("/api/v1/llms.txt")
+
+    def skill_md_v1(self) -> str:
+        """GET /api/v1/skills/SKILL.md — API-level skill discovery."""
+        return self._get_text("/api/v1/skills/SKILL.md")
+
+    def latest_value(self, key: str) -> Optional[Dict[str, Any]]:
+        """Get a stat including its latest data point, or None if not found."""
+        s = self.stat(key)
+        return s if s else None
+
     # ── Convenience Helpers ─────────────────────────────────────────
 
     def get_value(self, key: str) -> Optional[float]:

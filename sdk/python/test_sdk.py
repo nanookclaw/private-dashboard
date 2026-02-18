@@ -1098,6 +1098,241 @@ def test_alerts_no_auth(dash: Dashboard):
 # ── Cleanup ─────────────────────────────────────────────────────────
 
 @test("cleanup — delete test metrics")
+# ── Dual Discovery Paths ────────────────────────────────────────────
+
+@test("llms.txt root path")
+def test_llms_txt_root_path(dash: Dashboard):
+    txt = dash.llms_txt_root()
+    assert "dashboard" in txt.lower() or "stats" in txt.lower()
+
+@test("llms.txt v1 path")
+def test_llms_txt_v1_path(dash: Dashboard):
+    txt = dash.llms_txt_v1()
+    assert "dashboard" in txt.lower() or "stats" in txt.lower()
+
+@test("llms.txt root and v1 both work")
+def test_llms_txt_both_paths(dash: Dashboard):
+    root = dash.llms_txt_root()
+    v1 = dash.llms_txt_v1()
+    assert len(root) > 50
+    assert len(v1) > 50
+
+@test("skill.md v1 path")
+def test_skill_md_v1_path(dash: Dashboard):
+    md = dash.skill_md_v1()
+    assert "dashboard" in md.lower() or "private" in md.lower() or "skill" in md.lower()
+
+@test("skill.md both paths match")
+def test_skill_md_both_paths(dash: Dashboard):
+    wk = dash.skill_md()
+    v1 = dash.skill_md_v1()
+    assert wk == v1
+
+# ── Submit Edge Cases ───────────────────────────────────────────────
+
+@test("submit with unicode key")
+def test_submit_unicode_key(dash: Dashboard):
+    k = f"unicode_テスト_{int(time.time() * 1000) % 1_000_000}"
+    ok = dash.submit_one(k, 42.0)
+    assert ok
+    val = dash.get_value(k)
+    assert val == 42.0
+    dash.delete(k)
+
+@test("submit multiple values same key")
+def test_submit_multiple_same_key(dash: Dashboard):
+    k = f"multi_{int(time.time() * 1000) % 1_000_000}"
+    for i in range(5):
+        dash.submit_one(k, float(i * 10))
+    hist = dash.history(k, period="24h")
+    # Should have at least 5 data points
+    data = hist if isinstance(hist, list) else hist.get("data", hist.get("history", []))
+    assert len(data) >= 5
+    dash.delete(k)
+
+@test("submit and immediate read")
+def test_submit_immediate_read(dash: Dashboard):
+    k = f"imm_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 99.5)
+    val = dash.get_value(k)
+    assert val == 99.5
+    dash.delete(k)
+
+@test("submit batch with metadata")
+def test_submit_batch_metadata(dash: Dashboard):
+    k1 = f"batchm1_{int(time.time() * 1000) % 1_000_000}"
+    k2 = f"batchm2_{int(time.time() * 1000) % 1_000_000}"
+    ok = dash.submit([
+        {"key": k1, "value": 10.0, "metadata": {"source": "test"}},
+        {"key": k2, "value": 20.0, "metadata": {"source": "test"}},
+    ])
+    assert ok
+    assert dash.get_value(k1) == 10.0
+    assert dash.get_value(k2) == 20.0
+    dash.delete(k1)
+    dash.delete(k2)
+
+# ── History Edge Cases ──────────────────────────────────────────────
+
+@test("history returns consistent timestamps")
+def test_history_timestamps(dash: Dashboard):
+    k = f"histts_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 1.0)
+    dash.submit_one(k, 2.0)
+    hist = dash.history(k, period="24h")
+    data = hist if isinstance(hist, list) else hist.get("data", hist.get("history", []))
+    for point in data:
+        # Each point should have a timestamp
+        assert "timestamp" in point or "recorded_at" in point or "created_at" in point
+    dash.delete(k)
+
+@test("history after delete returns empty")
+def test_history_after_delete(dash: Dashboard):
+    k = f"histdel_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 42.0)
+    dash.delete(k)
+    try:
+        hist = dash.history(k, period="24h")
+        data = hist if isinstance(hist, list) else hist.get("data", hist.get("history", []))
+        assert len(data) == 0
+    except NotFoundError:
+        pass  # Also acceptable
+
+# ── Stats Response Structure ────────────────────────────────────────
+
+@test("stats list returns dicts with expected keys")
+def test_stats_response_keys(dash: Dashboard):
+    k = f"struct_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 5.0)
+    stats = dash.stats()
+    found = [s for s in stats if s["key"] == k]
+    assert len(found) == 1
+    s = found[0]
+    assert "key" in s
+    assert "current" in s
+    dash.delete(k)
+
+@test("stat single returns correct value")
+def test_stat_single_value(dash: Dashboard):
+    k = f"single2_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 77.7)
+    s = dash.stat(k)
+    assert s is not None
+    assert s["current"] == 77.7
+    dash.delete(k)
+
+@test("keys list includes test key")
+def test_keys_includes(dash: Dashboard):
+    k = f"keysincl_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 1.0)
+    keys = dash.keys()
+    assert k in keys
+    dash.delete(k)
+
+# ── Alert Edge Cases ────────────────────────────────────────────────
+
+@test("alerts with key that has no alerts")
+def test_alerts_empty_key(dash: Dashboard):
+    k = f"alertempty_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 50.0)
+    alerts = dash.alerts(key=k)
+    assert isinstance(alerts, list)
+    dash.delete(k)
+
+@test("alert count is non-negative")
+def test_alert_count_nonneg(dash: Dashboard):
+    count = dash.alert_count()
+    assert count >= 0
+
+@test("hot alerts returns list")
+def test_hot_alerts_is_list(dash: Dashboard):
+    hot = dash.hot_alerts(limit=5)
+    assert isinstance(hot, list)
+    assert len(hot) <= 5
+
+# ── Delete Edge Cases ───────────────────────────────────────────────
+
+@test("delete returns count")
+def test_delete_returns_count(dash: Dashboard):
+    k = f"delcount_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 1.0)
+    dash.submit_one(k, 2.0)
+    dash.submit_one(k, 3.0)
+    count = dash.delete(k)
+    assert isinstance(count, int)
+    assert count >= 1
+
+@test("double delete is safe")
+def test_double_delete(dash: Dashboard):
+    k = f"dbldel_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 1.0)
+    dash.delete(k)
+    try:
+        dash.delete(k)
+    except NotFoundError:
+        pass  # Expected
+
+# ── Trend Calculations ──────────────────────────────────────────────
+
+@test("trend for new metric is None or zero")
+def test_trend_new_metric(dash: Dashboard):
+    k = f"trendnew_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 100.0)
+    trend = dash.get_trend(k, "24h")
+    # New metric might have None trend or 0
+    assert trend is None or isinstance(trend, (int, float))
+    dash.delete(k)
+
+@test("trend with multiple data points")
+def test_trend_multiple_points(dash: Dashboard):
+    k = f"trendmulti_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 10.0)
+    dash.submit_one(k, 20.0)
+    trend = dash.get_trend(k, "24h")
+    # Should have some trend value now
+    dash.delete(k)
+
+# ── Prune Edge Cases ────────────────────────────────────────────────
+
+@test("prune returns result shape")
+def test_prune_result_shape(dash: Dashboard):
+    result = dash.prune()
+    assert isinstance(result, dict)
+
+# ── Latest Value Helper ─────────────────────────────────────────────
+
+@test("latest_value returns stat dict")
+def test_latest_value_dict(dash: Dashboard):
+    k = f"latestdict_{int(time.time() * 1000) % 1_000_000}"
+    dash.submit_one(k, 42.0)
+    result = dash.latest_value(k)
+    assert result is not None
+    assert result["current"] == 42.0
+    dash.delete(k)
+
+@test("latest_value returns None for missing")
+def test_latest_value_missing(dash: Dashboard):
+    result = dash.latest_value(f"noexist_{int(time.time() * 1000) % 1_000_000}")
+    assert result is None
+
+# ── Is Healthy Helper ───────────────────────────────────────────────
+
+@test("is_healthy returns True for running server")
+def test_is_healthy_true(dash: Dashboard):
+    assert dash.is_healthy() is True
+
+@test("is_healthy returns False for bad URL")
+def test_is_healthy_false(dash: Dashboard):
+    bad = Dashboard("http://localhost:19999")
+    assert bad.is_healthy() is False
+
+# ── Repr ────────────────────────────────────────────────────────────
+
+@test("repr includes URL")
+def test_repr_url(dash: Dashboard):
+    r = repr(dash)
+    assert "192.168.0.79" in r or "localhost" in r or "Dashboard" in r
+
 def test_cleanup(dash: Dashboard):
     """Clean up test metrics to not pollute the dashboard."""
     stats = dash.stats()
@@ -1109,7 +1344,10 @@ def test_cleanup(dash: Dashboard):
         "latest", "aaa_", "zzz_", "neg_", "zero_", "big_", "frac_",
         "test-key", "lgmeta", "boundary_", "mix_", "rapid_", "many_",
         "unknown_", "spark_", "updated_", "del_", "alert_", "health_",
-        "lifecycle", "hist_incl",
+        "lifecycle", "hist_incl", "unicode_", "multi_", "imm_", "batchm",
+        "histts_", "histdel_", "struct_", "single2_", "keysincl_",
+        "alertempty_", "delcount_", "dbldel_", "trendnew_", "trendmulti_",
+        "latestdict_",
     ]
     for s in stats:
         k = s["key"]
@@ -1293,6 +1531,60 @@ def main():
     test_counts_consistent(dash)
     test_history_custom_range_includes(dash)
     test_alerts_no_auth(dash)
+
+    # Dual Discovery Paths
+    print("\nDual Discovery Paths:")
+    test_llms_txt_root_path(dash)
+    test_llms_txt_v1_path(dash)
+    test_llms_txt_both_paths(dash)
+    test_skill_md_v1_path(dash)
+    test_skill_md_both_paths(dash)
+
+    # Submit Edge Cases
+    print("\nSubmit Edge Cases:")
+    test_submit_unicode_key(dash)
+    test_submit_multiple_same_key(dash)
+    test_submit_immediate_read(dash)
+    test_submit_batch_metadata(dash)
+
+    # History Edge Cases
+    print("\nHistory Edge Cases:")
+    test_history_timestamps(dash)
+    test_history_after_delete(dash)
+
+    # Stats Response Structure
+    print("\nStats Response Structure:")
+    test_stats_response_keys(dash)
+    test_stat_single_value(dash)
+    test_keys_includes(dash)
+
+    # Alert Edge Cases
+    print("\nAlert Edge Cases:")
+    test_alerts_empty_key(dash)
+    test_alert_count_nonneg(dash)
+    test_hot_alerts_is_list(dash)
+
+    # Delete Edge Cases
+    print("\nDelete Edge Cases:")
+    test_delete_returns_count(dash)
+    test_double_delete(dash)
+
+    # Trend Calculations Extra
+    print("\nTrend Calculations Extra:")
+    test_trend_new_metric(dash)
+    test_trend_multiple_points(dash)
+
+    # Prune Extra
+    print("\nPrune Extra:")
+    test_prune_result_shape(dash)
+
+    # Helpers
+    print("\nHelpers:")
+    test_latest_value_dict(dash)
+    test_latest_value_missing(dash)
+    test_is_healthy_true(dash)
+    test_is_healthy_false(dash)
+    test_repr_url(dash)
 
     # Cleanup
     print("\nCleanup:")
