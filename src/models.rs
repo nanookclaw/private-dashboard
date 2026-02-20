@@ -124,6 +124,12 @@ pub fn key_label(key: &str) -> String {
         "kanban_review" => "In Review".into(),
         "kanban_done" => "Done".into(),
         "kanban_active" => "Active Tasks".into(),
+        "pilot_confirmed" => "Pilot Confirmed".into(),
+        "pilot_invited_pending" => "Pilot Invites Pending".into(),
+        "pilot_agents_tracked" => "Agents Tracked".into(),
+        "pilot_agents_active" => "Active Pilot Agents".into(),
+        "pilot_day" => "Pilot Day".into(),
+        "blog_posts_published" => "Published Posts".into(),
         _ => key.replace('_', " ").to_string(),
     }
 }
