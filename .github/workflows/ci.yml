@@ -8,7 +8,7 @@ on:
     branches: [main]
 
 env:
-  IMAGE_NAME: ghcr.io/humans-not-required/private-dashboard
+  IMAGE_NAME: ghcr.io/nanookclaw/private-dashboard
 
 jobs:
   test:
