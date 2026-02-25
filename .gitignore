@@ -1,8 +1,32 @@
-target/
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Python
+__pycache__/
+*.pyc
+
+# SQLite
 *.db
 *.db-wal
 *.db-shm
-frontend/node_modules/
-frontend/dist/
+*.db-journal
+
+# Environment
 .env
-__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
